@@ -1,6 +1,9 @@
-For the time being the dataset used for the emotions will be:
-https://www.kaggle.com/datasets/msambare/fer2013?resource=download
-However if in the future there is any issues that arise from the used dataset it could change to this:
-https://figshare.com/articles/dataset/Underwater_Drowning_Detection_Dataset/29497235?file=56039351
-
-Once you have installed the dataset, just set its location to the correct position in your file explorer in the preprocessor.py file
+numpy
+tensorflow
+keras
+opencv-python
+matplotlib
+fastapi
+uvicorn
+ultralytics
+opencv-python
