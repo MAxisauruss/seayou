@@ -1,5 +1,14 @@
+import { useState } from "react";
 import "./LiveFeeds.css";
 import { Page } from "../types";
+import {
+  hasRelay,
+  droneVideoStreamUrl,
+  useDroneTelemetry,
+  formatLat,
+  formatLon,
+  formatHeight,
+} from "../services/droneTelemetry";
 
 interface LiveFeedsProps {
   onNavigate: (page: Page) => void;
@@ -7,6 +16,26 @@ interface LiveFeedsProps {
 }
 
 export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
+  // Read-only. See services/droneTelemetry.ts - that module has no send
+  // path at all, so this page cannot command the aircraft even by mistake.
+  //
+  // Every live value below falls back to the original demo content when no
+  // relay is configured, which is the case for anyone who just opens the
+  // public link. Deploying this does not change what they see.
+  const { linkState, droneConnected, telemetry, packetAgeSeconds } =
+    useDroneTelemetry();
+  // The ground station answers /stream.mjpg with 503 when the aircraft has
+  // sent it no frames - no camera fitted, or the simulator. Without this
+  // the panel renders a broken-image icon and alt text, which reads as "the
+  // site is broken" rather than "this drone has no camera".
+  const [videoFailed, setVideoFailed] = useState(false);
+  const gps = telemetry?.gps;
+  const mission = telemetry?.mission;
+  const detection = telemetry?.detection;
+  const live = hasRelay && linkState === "connected" && droneConnected;
+  // A feed that has stopped updating looks identical to a still one, so
+  // the age is worth showing rather than hiding behind "connected".
+  const stale = live && packetAgeSeconds !== null && packetAgeSeconds > 3;
 
   return (
     <div className="live-feeds-page h-screen flex flex-col">
@@ -139,11 +168,38 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/10 overflow-hidden">
             {/* Left Panel: 4K Drone Feed */}
             <div className="relative bg-black overflow-hidden group">
-              <img
-                alt="A high-altitude aerial view of a turquoise ocean meeting a white sandy coastline"
-                className="w-full h-full object-cover opacity-80"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAq7wPmlIeKjkHsZHTMfNMWxDHQTYOB6jVEoXdv09T8rBFPyxtchas3gNTHFIs8ZHMN3571dYaSsCdoTW2gVO9cYJN2NH2J3O7nMK53gRncCnpE8mY9wCJcUvAiEwA4IEWsd6yVORc-lkG-aEXMBhkv_qB-o4NNJvwa4FLQQO1hwd1swA9NV4NWQxfGIE0Ns0CJjvRZP7UkZmWft1s5H6JO5ELzkfkx2oQfOe_xCr0aQ8Mv5UbfgXscOOv7eEI8jSqTuZkzKRNzThw"
-              />
+              {hasRelay ? (
+                /* The drone's own camera, re-served by the ground station as
+                   multipart/x-mixed-replace. An <img> is the whole client -
+                   the browser holds the connection open and repaints every
+                   frame, no library involved. */
+                videoFailed ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-black">
+                    <span
+                      className="material-symbols-outlined text-4xl text-on-surface-variant"
+                      data-icon="videocam_off"
+                    >
+                      videocam_off
+                    </span>
+                    <span className="font-label-caps text-label-caps text-on-surface-variant">
+                      NO CAMERA // TELEMETRY LINK OK
+                    </span>
+                  </div>
+                ) : (
+                  <img
+                    alt="Live camera feed from the drone"
+                    className="w-full h-full object-cover"
+                    src={droneVideoStreamUrl}
+                    onError={() => setVideoFailed(true)}
+                  />
+                )
+              ) : (
+                <img
+                  alt="A high-altitude aerial view of a turquoise ocean meeting a white sandy coastline"
+                  className="w-full h-full object-cover opacity-80"
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAq7wPmlIeKjkHsZHTMfNMWxDHQTYOB6jVEoXdv09T8rBFPyxtchas3gNTHFIs8ZHMN3571dYaSsCdoTW2gVO9cYJN2NH2J3O7nMK53gRncCnpE8mY9wCJcUvAiEwA4IEWsd6yVORc-lkG-aEXMBhkv_qB-o4NNJvwa4FLQQO1hwd1swA9NV4NWQxfGIE0Ns0CJjvRZP7UkZmWft1s5H6JO5ELzkfkx2oQfOe_xCr0aQ8Mv5UbfgXscOOv7eEI8jSqTuZkzKRNzThw"
+                />
+              )}
               {/* Drone Telemetry Overlay */}
               <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
                 <div className="flex justify-between items-start">
@@ -151,21 +207,67 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                     <span className="font-label-caps text-label-caps text-tertiary">DRONE-04 // SECTOR ALPHA</span>
                     <div className="flex items-center gap-4">
                       <div className="flex flex-col">
-                        <span className="font-label-caps text-[10px] text-on-surface-variant">ALTITUDE</span>
-                        <span className="font-telemetry-lg text-telemetry-lg text-white">42.5M</span>
+                        <span className="font-label-caps text-[10px] text-on-surface-variant">
+                          {hasRelay ? "HEIGHT" : "ALTITUDE"}
+                        </span>
+                        <span className="font-telemetry-lg text-telemetry-lg text-white">
+                          {hasRelay ? formatHeight(telemetry?.baro) : "42.5M"}
+                        </span>
                       </div>
                       <div className="w-px h-8 bg-white/10"></div>
+                      {/* SATS, not BATTERY: the aircraft reports no battery
+                          state, and a made-up percentage next to real
+                          numbers is worse than no number. Satellites are
+                          real, and they are the thing that decides whether
+                          autonomous flight can run at all. */}
                       <div className="flex flex-col">
-                        <span className="font-label-caps text-[10px] text-on-surface-variant">BATTERY</span>
-                        <span className="font-telemetry-lg text-telemetry-lg text-[#00E676]">84%</span>
+                        <span className="font-label-caps text-[10px] text-on-surface-variant">
+                          {hasRelay ? "SATS" : "BATTERY"}
+                        </span>
+                        <span
+                          className={`font-telemetry-lg text-telemetry-lg ${
+                            hasRelay && !gps?.has_fix ? "text-[#FF6B35]" : "text-[#00E676]"
+                          }`}
+                        >
+                          {hasRelay ? (live ? (gps?.sat_count ?? 0) : "—") : "84%"}
+                        </span>
                       </div>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 items-end">
                     <div className="bg-secondary-container/80 backdrop-blur-md px-3 py-1 rounded border border-secondary/20 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                      <span className="font-telemetry-sm text-telemetry-sm text-white">LIVE REC 4K</span>
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          !hasRelay || live ? "bg-red-500 animate-pulse" : "bg-white/30"
+                        }`}
+                      ></span>
+                      <span className="font-telemetry-sm text-telemetry-sm text-white">
+                        {!hasRelay
+                          ? "LIVE REC 4K"
+                          : live
+                            ? stale
+                              ? `STALE ${packetAgeSeconds?.toFixed(0)}s`
+                              : "LIVE TELEMETRY"
+                            : linkState === "connected"
+                              ? "DRONE OFFLINE"
+                              : linkState.toUpperCase()}
+                      </span>
                     </div>
+                    {/* Said plainly and permanently, so nobody watching this
+                        page expects to be able to do anything with it. */}
+                    {hasRelay && (
+                      <div className="glass-panel px-3 py-1 rounded flex items-center gap-2">
+                        <span
+                          className="material-symbols-outlined text-sm text-[#FF6B35]"
+                          data-icon="visibility"
+                        >
+                          visibility
+                        </span>
+                        <span className="font-telemetry-sm text-telemetry-sm text-white">
+                          READ-ONLY MIRROR
+                        </span>
+                      </div>
+                    )}
                     <div className="glass-panel px-3 py-1 rounded flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm text-tertiary" data-icon="thermostat">
                         thermostat
@@ -185,14 +287,83 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                 </div>
                 {/* Bottom Telemetry */}
                 <div className="flex justify-between items-end">
-                  <div className="glass-panel p-3 rounded flex gap-4">
-                    <div className="flex flex-col">
-                      <span className="font-label-caps text-[9px] text-on-surface-variant">LAT</span>
-                      <span className="font-telemetry-sm text-telemetry-sm text-white">34.0194° N</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="font-label-caps text-[9px] text-on-surface-variant">LONG</span>
-                      <span className="font-telemetry-sm text-telemetry-sm text-white">118.4912° W</span>
+                  <div className="flex flex-col gap-2">
+                    {/* Autonomous flight, computed ONBOARD the Pi and relayed
+                        in telemetry. Shown, never commanded: starting or
+                        aborting a waypoint is commanding the aircraft, so it
+                        stays on the ground station. The server refuses it
+                        here too - a viewer token gets 403 from /mission. */}
+                    {hasRelay && mission && mission.state !== "idle" && (
+                      <div className="glass-panel p-3 rounded flex gap-4">
+                        <div className="flex flex-col">
+                          <span className="font-label-caps text-[9px] text-on-surface-variant">
+                            AUTONOMOUS
+                          </span>
+                          <span
+                            className={`font-telemetry-sm text-telemetry-sm ${
+                              mission.state === "aborted"
+                                ? "text-[#FF3B30]"
+                                : mission.state === "running"
+                                  ? "text-[#FF6B35]"
+                                  : "text-[#00E676]"
+                            }`}
+                          >
+                            {mission.state.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-label-caps text-[9px] text-on-surface-variant">
+                            TO RUN
+                          </span>
+                          <span className="font-telemetry-sm text-telemetry-sm text-white">
+                            {mission.distance_m != null ? `${mission.distance_m} m` : "—"}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="font-label-caps text-[9px] text-on-surface-variant">
+                            BEARING
+                          </span>
+                          <span className="font-telemetry-sm text-telemetry-sm text-white">
+                            {mission.bearing_deg != null ? `${mission.bearing_deg}°` : "—"}
+                          </span>
+                        </div>
+                        {detection?.confirmed && (
+                          <div className="flex flex-col">
+                            <span className="font-label-caps text-[9px] text-on-surface-variant">
+                              DETECTOR
+                            </span>
+                            <span className="font-telemetry-sm text-telemetry-sm text-[#FF3B30]">
+                              ⚠ HOLDING
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="glass-panel p-3 rounded flex gap-4">
+                      <div className="flex flex-col">
+                        <span className="font-label-caps text-[9px] text-on-surface-variant">LAT</span>
+                        <span className="font-telemetry-sm text-telemetry-sm text-white">
+                          {hasRelay ? (live ? formatLat(gps?.lat) : "—") : "34.0194° N"}
+                        </span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="font-label-caps text-[9px] text-on-surface-variant">LONG</span>
+                        <span className="font-telemetry-sm text-telemetry-sm text-white">
+                          {hasRelay ? (live ? formatLon(gps?.lon) : "—") : "118.4912° W"}
+                        </span>
+                      </div>
+                      {hasRelay && (
+                        <div className="flex flex-col">
+                          <span className="font-label-caps text-[9px] text-on-surface-variant">
+                            ATTITUDE
+                          </span>
+                          <span className="font-telemetry-sm text-telemetry-sm text-white">
+                            {live && telemetry
+                              ? `R ${telemetry.attitude.roll.toFixed(0)}° / P ${telemetry.attitude.pitch.toFixed(0)}°`
+                              : "—"}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-2">
