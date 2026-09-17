@@ -330,8 +330,6 @@ export default function RescueResponse({ onNavigate, activePage }: RescueRespons
         </div>
       </main>
 
-      {/* Emergency Modal Backdrop (Subtle hint of UI state) */}
-      <div className="fixed inset-0 border-[8px] border-secondary/20 pointer-events-none z-[100] animate-pulse"></div>
     </div>
   );
 }
