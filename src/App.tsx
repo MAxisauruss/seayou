@@ -19,7 +19,7 @@ const PAGES: Record<Page, { label: string; component: React.ComponentType<PageCo
 };
 
 function App() {
-  const [page, setPage] = useState<Page>("live-feeds");
+  const [page, setPage] = useState<Page>("rescue-response");
   const ActivePage = PAGES[page].component;
 
   return (
