@@ -1,0 +1,101 @@
+.not-found-page {
+  background-color: #0c0f0f;
+}
+
+/* Thin gradient frame around the whole viewport, matching the reference's
+   glowing card-edge look. A fixed pseudo-frame rather than a real border so
+   it never affects layout/box sizing of anything inside it. */
+.frame-glow {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#0c0f0f, #0c0f0f) padding-box,
+    linear-gradient(135deg, rgba(140, 130, 255, 0.35), rgba(255, 107, 53, 0.15) 40%, rgba(90, 160, 255, 0.3)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* Repeating "404 ERROR / SIGNAL LOST" watermark, tiled behind the content.
+   Opacity is intentionally very low - it's texture, not a message. */
+.ghost-grid {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2rem 0;
+}
+
+.ghost-row {
+  display: flex;
+  justify-content: space-around;
+  color: #ffffff;
+  opacity: 0.035;
+  white-space: nowrap;
+  font-family: "Inter", sans-serif;
+  font-weight: 800;
+  font-size: 42px;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+.ghost-row span {
+  display: flex;
+  flex-direction: column;
+}
+
+.ghost-row small {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+}
+
+.center-glow {
+  width: 520px;
+  height: 320px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(184, 57, 0, 0.25), transparent 70%);
+  filter: blur(10px);
+}
+
+.side-rail {
+  width: 1px;
+  height: 180px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.side-rail-hot {
+  position: absolute;
+  top: 40%;
+  left: -1px;
+  width: 3px;
+  height: 28px;
+  background: #ff6b35;
+  box-shadow: 0 0 8px rgba(255, 107, 53, 0.7);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ff6b35;
+  box-shadow: 0 0 6px rgba(255, 107, 53, 0.8);
+  animation: status-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.error-code {
+  color: #e2e2e2;
+  text-shadow: 0 0 40px rgba(226, 226, 226, 0.15);
+}
+
+.stat-box {
+  min-width: 0;
+}
