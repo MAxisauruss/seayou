@@ -15,6 +15,44 @@ interface LiveFeedsProps {
   activePage: Page;
 }
 
+type CameraId = "drone" | "zone-01" | "zone-02" | "zone-03" | "zone-04";
+
+const cameras: Array<{
+  id: CameraId;
+  label: string;
+  alt: string;
+  src?: string;
+  detection?: { label: string; className: string };
+}> = [
+  {
+    id: "drone",
+    label: "DRONE-04 // AERIAL",
+    alt: "A high-altitude aerial view of a turquoise ocean meeting a white sandy coastline",
+    src: "https://lh3.googleusercontent.com/aida-public/AB6AXuAq7wPmlIeKjkHsZHTMfNMWxDHQTYOB6jVEoXdv09T8rBFPyxtchas3gNTHFIs8ZHMN3571dYaSsCdoTW2gVO9cYJN2NH2J3O7nMK53gRncCnpE8mY9wCJcUvAiEwA4IEWsd6yVORc-lkG-aEXMBhkv_qB-o4NNJvwa4FLQQO1hwd1swA9NV4NWQxfGIE0Ns0CJjvRZP7UkZmWft1s5H6JO5ELzkfkx2oQfOe_xCr0aQ8Mv5UbfgXscOOv7eEI8jSqTuZkzKRNzThw",
+  },
+  {
+    id: "zone-01",
+    label: "ZONE 01 - NORTH",
+    alt: "A CCTV camera angle over a crowded public beach with blue umbrellas, with an AI detection box highlighting swimmers",
+    src: "https://lh3.googleusercontent.com/aida-public/AB6AXuCWJ1xBj4ts1AjauqBXohFMrysiCuEoHpOY4AgvN3QNduCI4qu9o5Opx5QfKa2pp8kJNm9xORovzVPWNr3HLqyDu4ktwZ-IUZuvrB_OjBewiIb2I70VUwhFhp9RRO1Jx1fqq3eWokdghSNAXSzodg5o_kBgFHlK0MHBQKAIRjI1hx2ePWbcTM94T33TK15IRlN-Lx7WX9D6ordBcx0-2egOCe0kZhL34N_EgpJJELTUQHJtEDDTvGVByMpy0pk4XRS3MlkiFPBVZB4",
+    detection: { label: "HUMAN 0.98", className: "top-[30%] left-[45%] w-16 h-24" },
+  },
+  {
+    id: "zone-02",
+    label: "ZONE 02 - PIER",
+    alt: "A wide-angle security feed of a wooden beach pier extending into water, with an AI detection box highlighting a vessel",
+    src: "https://lh3.googleusercontent.com/aida-public/AB6AXuCb7GgnBDnvxNJnEgMNOzC5-UdWUWfGkzKQTMiZEW7ofEG10rGSUfQBkvVULtL3x9bglkNI6I-XySqCJ7VluaWxFLtltM9RSI2gSZRw2_urbD8SlUEd_QiFpDov_5D5dv7YUHnyX7iO_xLeAqznuutJ7FVFf-ys2TysgISu0R2ZyEM6rnu_YIMiMjJHakskMJv9vbw3dClFpeH9rhHceWWkiD1Vtlt2bs5TbnH_fJ7TxpSA8vSTM2WLQeNOLJhRYzoODYa7nEuPND0",
+    detection: { label: "VESSEL 0.92", className: "top-[50%] left-[20%] w-20 h-12" },
+  },
+  {
+    id: "zone-03",
+    label: "ZONE 03 - SHORE",
+    alt: "A low-angle surveillance view from a shoreline post showing waves crashing on a sun-drenched beach",
+    src: "https://lh3.googleusercontent.com/aida-public/AB6AXuBRpYbVekLs-0da3gtnK8E9NJPbIxBan8xow61s-Mwjy7shEeF2rWUDeQ3rsO6Uid-U4NKr-aBTgM2CKEODwDm8t7Q6RJNoneHnSMGhTlYeIRhyhVuWfcZtS_a5RBDZ-m-3v56dwbTObofWBoBdsRTiGfnB9WAjdAinOigYJKtXGfQlxC0tJc9oZ_OIIe9dJxUVPze32qb_LtfvUwVCTQIUbLiGpKwborA8-NgDou1RuJ7utBSA8w_Y4bCsS633YniduoKSOYc47Uo",
+  },
+  { id: "zone-04", label: "ZONE 04 - OFFLINE", alt: "Zone 04 camera signal lost" },
+];
+
 export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
   // Read-only. See services/droneTelemetry.ts - that module has no send
   // path at all, so this page cannot command the aircraft even by mistake.
@@ -29,6 +67,7 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
   // the panel renders a broken-image icon and alt text, which reads as "the
   // site is broken" rather than "this drone has no camera".
   const [videoFailed, setVideoFailed] = useState(false);
+  const [selectedCamera, setSelectedCamera] = useState<CameraId>("drone");
   const gps = telemetry?.gps;
   const mission = telemetry?.mission;
   const detection = telemetry?.detection;
@@ -36,6 +75,8 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
   // A feed that has stopped updating looks identical to a still one, so
   // the age is worth showing rather than hiding behind "connected".
   const stale = live && packetAgeSeconds !== null && packetAgeSeconds > 3;
+  const activeCamera = cameras.find((camera) => camera.id === selectedCamera) ?? cameras[0];
+  const gridCameras = cameras.filter((camera) => camera.id !== selectedCamera);
 
   return (
     <div className="live-feeds-page h-screen flex flex-col">
@@ -168,7 +209,7 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/10 overflow-hidden">
             {/* Left Panel: 4K Drone Feed */}
             <div className="relative bg-black overflow-hidden group">
-              {hasRelay ? (
+              {activeCamera.id === "drone" && hasRelay ? (
                 /* The drone's own camera, re-served by the ground station as
                    multipart/x-mixed-replace. An <img> is the whole client -
                    the browser holds the connection open and repaints every
@@ -193,12 +234,24 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                     onError={() => setVideoFailed(true)}
                   />
                 )
-              ) : (
+              ) : activeCamera.src ? (
                 <img
-                  alt="A high-altitude aerial view of a turquoise ocean meeting a white sandy coastline"
+                  alt={activeCamera.alt}
                   className="w-full h-full object-cover opacity-80"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAq7wPmlIeKjkHsZHTMfNMWxDHQTYOB6jVEoXdv09T8rBFPyxtchas3gNTHFIs8ZHMN3571dYaSsCdoTW2gVO9cYJN2NH2J3O7nMK53gRncCnpE8mY9wCJcUvAiEwA4IEWsd6yVORc-lkG-aEXMBhkv_qB-o4NNJvwa4FLQQO1hwd1swA9NV4NWQxfGIE0Ns0CJjvRZP7UkZmWft1s5H6JO5ELzkfkx2oQfOe_xCr0aQ8Mv5UbfgXscOOv7eEI8jSqTuZkzKRNzThw"
+                  src={activeCamera.src}
                 />
+              ) : (
+                <div className="w-full h-full bg-[#050B14] flex flex-col items-center justify-center gap-4">
+                  <span className="material-symbols-outlined text-4xl text-white/20 animate-pulse" data-icon="videocam_off">
+                    videocam_off
+                  </span>
+                  <span className="font-label-caps text-label-caps text-on-surface-variant">SIGNAL LOST // ZONE 04</span>
+                </div>
+              )}
+              {activeCamera.id !== "drone" && (
+                <div className="absolute top-6 left-6 bg-black/60 px-3 py-1 rounded text-xs font-telemetry-sm text-white">
+                  {activeCamera.label}
+                </div>
               )}
               {/* Drone Telemetry Overlay */}
               <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
@@ -399,61 +452,40 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                 </div>
               </div>
               <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-1 p-1 overflow-y-auto">
-                {/* Zone 1 */}
-                <div className="relative bg-black group overflow-hidden">
-                  <img
-                    alt="A CCTV camera angle over a crowded public beach with blue umbrellas, with an AI detection box highlighting swimmers"
-                    className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-500"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWJ1xBj4ts1AjauqBXohFMrysiCuEoHpOY4AgvN3QNduCI4qu9o5Opx5QfKa2pp8kJNm9xORovzVPWNr3HLqyDu4ktwZ-IUZuvrB_OjBewiIb2I70VUwhFhp9RRO1Jx1fqq3eWokdghSNAXSzodg5o_kBgFHlK0MHBQKAIRjI1hx2ePWbcTM94T33TK15IRlN-Lx7WX9D6ordBcx0-2egOCe0kZhL34N_EgpJJELTUQHJtEDDTvGVByMpy0pk4XRS3MlkiFPBVZB4"
-                  />
-                  <div className="absolute top-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-telemetry-sm text-white">
-                    ZONE 01 - NORTH
-                  </div>
-                  <div className="absolute top-[30%] left-[45%] w-16 h-24 ai-detection-box pointer-events-none">
-                    <span className="absolute -top-5 left-0 font-label-caps text-[8px] text-tertiary bg-black/80 px-1">
-                      HUMAN 0.98
-                    </span>
-                  </div>
-                </div>
-                {/* Zone 2 */}
-                <div className="relative bg-black group overflow-hidden">
-                  <img
-                    alt="A wide-angle security feed of a wooden beach pier extending into water, with an AI detection box highlighting a vessel"
-                    className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-500"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCb7GgnBDnvxNJnEgMNOzC5-UdWUWfGkzKQTMiZEW7ofEG10rGSUfQBkvVULtL3x9bglkNI6I-XySqCJ7VluaWxFLtltM9RSI2gSZRw2_urbD8SlUEd_QiFpDov_5D5dv7YUHnyX7iO_xLeAqznuutJ7FVFf-ys2TysgISu0R2ZyEM6rnu_YIMiMjJHakskMJv9vbw3dClFpeH9rhHceWWkiD1Vtlt2bs5TbnH_fJ7TxpSA8vSTM2WLQeNOLJhRYzoODYa7nEuPND0"
-                  />
-                  <div className="absolute top-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-telemetry-sm text-white">
-                    ZONE 02 - PIER
-                  </div>
-                  <div className="absolute top-[50%] left-[20%] w-20 h-12 ai-detection-box pointer-events-none">
-                    <span className="absolute -top-5 left-0 font-label-caps text-[8px] text-tertiary bg-black/80 px-1">
-                      VESSEL 0.92
-                    </span>
-                  </div>
-                </div>
-                {/* Zone 3 */}
-                <div className="relative bg-black group overflow-hidden">
-                  <img
-                    alt="A low-angle surveillance view from a shoreline post showing waves crashing on a sun-drenched beach"
-                    className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-500"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuBRpYbVekLs-0da3gtnK8E9NJPbIxBan8xow61s-Mwjy7shEeF2rWUDeQ3rsO6Uid-U4NKr-aBTgM2CKEODwDm8t7Q6RJNoneHnSMGhTlYeIRhyhVuWfcZtS_a5RBDZ-m-3v56dwbTObofWBoBdsRTiGfnB9WAjdAinOigYJKtXGfQlxC0tJc9oZ_OIIe9dJxUVPze32qb_LtfvUwVCTQIUbLiGpKwborA8-NgDou1RuJ7utBSA8w_Y4bCsS633YniduoKSOYc47Uo"
-                  />
-                  <div className="absolute top-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-telemetry-sm text-white">
-                    ZONE 03 - SHORE
-                  </div>
-                </div>
-                {/* Zone 4 */}
-                <div className="relative bg-black group overflow-hidden">
-                  <div className="w-full h-full bg-[#050B14] flex flex-col items-center justify-center gap-4">
-                    <span className="material-symbols-outlined text-4xl text-white/20 animate-pulse" data-icon="videocam_off">
-                      videocam_off
-                    </span>
-                    <span className="font-label-caps text-label-caps text-on-surface-variant">SIGNAL LOST // ZONE 04</span>
-                    <button className="px-4 py-2 border border-primary/30 rounded font-label-caps text-[10px] text-primary hover:bg-primary/10">
-                      ATTEMPT RECONNECT
-                    </button>
-                  </div>
-                </div>
+                {gridCameras.map((camera) => (
+                  <button
+                    key={camera.id}
+                    type="button"
+                    aria-label={`Show ${camera.label} as the main camera`}
+                    className="relative bg-black group overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary"
+                    onClick={() => setSelectedCamera(camera.id)}
+                  >
+                    {camera.src ? (
+                      <img
+                        alt={camera.alt}
+                        className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-500"
+                        src={camera.src}
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-[#050B14] flex flex-col items-center justify-center gap-4">
+                        <span className="material-symbols-outlined text-4xl text-white/20 animate-pulse" data-icon="videocam_off">
+                          videocam_off
+                        </span>
+                        <span className="font-label-caps text-label-caps text-on-surface-variant">SIGNAL LOST // ZONE 04</span>
+                      </div>
+                    )}
+                    <div className="absolute top-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-telemetry-sm text-white">
+                      {camera.label}
+                    </div>
+                    {camera.detection && (
+                      <div className={`absolute ${camera.detection.className} ai-detection-box pointer-events-none`}>
+                        <span className="absolute -top-5 left-0 font-label-caps text-[8px] text-tertiary bg-black/80 px-1">
+                          {camera.detection.label}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/pages/analytics.tsx","./src/pages/assetmap.tsx","./src/pages/livefeeds.tsx","./src/pages/rescuelogs.tsx","./src/pages/rescueresponse.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/pages/analytics.tsx","./src/pages/assetmap.tsx","./src/pages/livefeeds.tsx","./src/pages/rescuelogs.tsx","./src/pages/rescueresponse.tsx","./src/pages/services/dronetelemetry.ts","./src/services/dronetelemetry.ts"],"version":"5.9.3"}
