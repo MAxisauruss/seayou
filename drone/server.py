@@ -563,6 +563,10 @@ class PicoLink:
         # Consecutive control-packet writes the Pico refused to accept.
         self._write_stalls = 0
         self._serial_timeout_exc: type[BaseException] = TimeoutError
+        # Replaced with pyserial's real classes in run(). OSError is the
+        # honest stand-in until then: every pyserial error derives from it.
+        self._serial_error_exc: type[BaseException] = OSError
+        self._serial_module = None
         # INA219 pack monitor on the Pi's own I2C bus. Samples on its
         # own thread; this loop only ever reads the last value, so a
         # stuck I2C bus cannot stall the 30 Hz link loop.
@@ -650,6 +654,41 @@ class PicoLink:
         ratio = baro["pressure_hpa"] / self._baseline_pressure_hpa
         baro["height_m"] = 44330.0 * (1.0 - ratio ** (1.0 / 5.255))
 
+    async def _reopen_serial(self) -> bool:
+        """Reopen /dev/pico after the device went away and came back.
+
+        Power-cycling the Pico is a NORMAL operation on this aircraft - the
+        handover tells you to do it whenever the flight controller is stuck
+        waiting for calibration. But USB does not preserve the file
+        descriptor across that: the node disappears and returns (often as a
+        different ttyACM number, which is why /dev/pico is a udev symlink),
+        and every write to the old handle then fails with Errno 5.
+
+        Without this the loop caught that error, logged it, and tried the
+        same dead handle again thirty times a second forever - the link
+        never came back until somebody restarted the service by hand.
+        Observed 2026-09-21 after a power cycle.
+        """
+        try:
+            if self._serial is not None:
+                try:
+                    self._serial.close()
+                except Exception:
+                    pass  # It is already broken; closing is best-effort.
+            self._serial = self._serial_module.Serial(
+                self.serial_path, self.baud, timeout=0, write_timeout=0.25
+            )
+            log.info("Reopened %s - the Pico is back.", self.serial_path)
+            self._connected = True
+            self._write_stalls = 0
+            return True
+        except Exception as exc:
+            # Expected while the Pico is still enumerating. Logged at most
+            # once a second by the caller's backoff, not 30 times.
+            log.warning("Cannot reopen %s yet (%s)", self.serial_path, exc)
+            self._connected = False
+            return False
+
     async def run(self):
         import serial  # pyserial - deferred import so the rest of the
         # server (dashboard, video) still works if pyserial isn't installed.
@@ -670,6 +709,8 @@ class PicoLink:
         # Kept so the link loop can tell "the Pico stopped draining" apart
         # from a genuine bug without importing pyserial at module scope.
         self._serial_timeout_exc = serial.SerialTimeoutException
+        self._serial_error_exc = serial.SerialException
+        self._serial_module = serial
 
         # Never let a handshake problem kill the service. Calibration is a
         # nice-to-have; the control link and the DISARM button are not.
@@ -720,6 +761,16 @@ class PicoLink:
                                  "write(s).", self._write_stalls)
                         self._write_stalls = 0
                         self._connected = True
+                except self._serial_error_exc as exc:
+                    # The DEVICE went away - a power cycle, or the cable.
+                    # Not the same as the Pico refusing to read: this handle
+                    # is dead and will never work again, so get a new one.
+                    log.warning("Pico serial write failed (%s) - reopening %s",
+                                exc, self.serial_path)
+                    self._connected = False
+                    await self._reopen_serial()
+                    await asyncio.sleep(0.5)
+                    continue
                 except self._serial_timeout_exc:
                     # The Pico is not reading its end of the USB CDC pipe -
                     # it has hung, or been unplugged. Log the first one and
@@ -874,7 +925,16 @@ class PicoLink:
         deadline = time.monotonic() + self.REPLY_TIMEOUT_S
         buf = bytearray()
         while time.monotonic() < deadline and len(buf) < TELEM_LEN:
-            chunk = self._serial.read(TELEM_LEN - len(buf))
+            try:
+                chunk = self._serial.read(TELEM_LEN - len(buf))
+            except self._serial_error_exc as exc:
+                # Same dead handle as the write side - the device went
+                # away. Hand back "no telemetry" and let the loop's write
+                # path do the reopening, so there is exactly one place
+                # that reopens the port.
+                log.warning("Pico serial read failed (%s)", exc)
+                self._connected = False
+                return None
             if chunk:
                 buf += chunk
             elif any(len(buf) == n and buf[n - 1] == END_BYTE for n in TELEM_LENS):
