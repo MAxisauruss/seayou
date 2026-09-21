@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover lets the page use the full width of a notched phone
+     in landscape; the safe-area-inset padding in style.css keeps the
+     topbar and sticks clear of the notch and home indicator. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>SeaYou Drone Control</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">SeaYou</span>
+    <span class="brand-sub">Drone Control</span>
+  </div>
+  <div class="status-cluster">
+    <div class="status-pill" id="link-pill">
+      <span class="dot"></span><span id="link-text">Connecting&hellip;</span>
+    </div>
+    <div class="status-pill" id="gps-pill">
+      <span class="dot"></span><span id="gps-text">GPS: no fix</span>
+    </div>
+  </div>
+  <button id="shutdown-btn" class="shutdown-btn" title="Cleanly shut down the Pi 5">SHUTDOWN</button>
+  <button id="estop" class="estop">DISARM</button>
+</header>
+
+<main class="stage">
+
+  <section class="video-panel">
+    <img id="video" src="/stream.mjpg" alt="Live drone camera feed" onerror="this.classList.add('broken')">
+    <div class="video-fallback">No video signal</div>
+    <div class="arm-banner" id="arm-banner">DISARMED</div>
+  </section>
+
+  <aside class="telemetry-panel">
+    <div class="horizon-wrap">
+      <svg id="horizon" viewBox="0 0 200 200" class="horizon">
+        <defs>
+          <clipPath id="horizon-clip"><circle cx="100" cy="100" r="94"/></clipPath>
+        </defs>
+        <circle cx="100" cy="100" r="94" class="horizon-bezel"/>
+        <g clip-path="url(#horizon-clip)">
+          <g id="horizon-tilt">
+            <rect x="-100" y="-400" width="400" height="400" class="sky"/>
+            <rect x="-100" y="0" width="400" height="400" class="ground"/>
+            <line x1="-100" y1="0" x2="300" y2="0" class="horizon-line"/>
+          </g>
+        </g>
+        <circle cx="100" cy="100" r="94" class="horizon-ring"/>
+        <line x1="70" y1="100" x2="130" y2="100" class="center-mark"/>
+        <line x1="100" y1="88" x2="100" y2="112" class="center-mark"/>
+      </svg>
+      <div class="horizon-readout">
+        <span>ROLL <b id="roll-val">0.0&deg;</b></span>
+        <span>PITCH <b id="pitch-val">0.0&deg;</b></span>
+        <span>YAW <b id="yaw-val">0.0&deg;</b></span>
+      </div>
+    </div>
+
+    <div class="telemetry-rows">
+      <div class="trow"><span>Fix type</span><b id="fix-val">&mdash;</b></div>
+      <div class="trow"><span>Satellites</span><b id="sat-val">0</b></div>
+      <div class="trow"><span>Height (since power-on)</span><b id="baro-height-val">&mdash;</b></div>
+      <div class="trow"><span>Baro pressure</span><b id="baro-pressure-val">&mdash;</b></div>
+      <div class="trow"><span>Baro temp</span><b id="baro-temp-val">&mdash;</b></div>
+      <div class="trow"><span>Gyro calibration</span><b id="gyrocal-val">&mdash;</b></div>
+      <div class="trow"><span>Throttle commanded</span><b id="throttle-val">0%</b></div>
+      <div class="trow"><span>Yaw commanded</span><b id="yawcmd-val">0</b></div>
+      <div class="trow"><span>Motors 1&ndash;4</span><b id="motors-val">&mdash;</b></div>
+      <div class="trow"><span>Motor spread</span><b id="motorspread-val">&mdash;</b></div>
+      <div class="trow"><span>Packet age</span><b id="age-val">&mdash;</b></div>
+      <div class="trow"><span>Dashboard clients</span><b id="clients-val">&mdash;</b></div>
+    </div>
+
+    <!-- Level zero-point: cancels the fixed tilt between the sensor board
+         and the frame. Hidden entirely on Pico firmware that predates the
+         level-capture block, so it can never look like it worked when
+         nothing is listening on the other end. -->
+    <div class="level-block" id="level-block" hidden>
+      <div class="level-head">
+        <span>LEVEL ZERO-POINT</span>
+        <button id="level-erase-btn" class="level-erase" title="Erase the stored zero point (back to 0.00&deg; / 0.00&deg;)">ERASE</button>
+      </div>
+      <button id="level-btn" class="level-btn">SET LEVEL</button>
+      <div class="trow"><span>Stored offset</span><b id="level-offset-val">&mdash;</b></div>
+      <div class="trow"><span>Status</span><b id="level-status-val">&mdash;</b></div>
+      <p class="level-hint">Drone on a level surface, disarmed, completely still. Takes about 3 seconds.</p>
+    </div>
+  </aside>
+
+</main>
+
+<footer class="controls">
+  <div class="stick-block">
+    <div class="stick-label">THROTTLE / YAW</div>
+    <div class="stick" id="stick-left"><div class="stick-knob"></div></div>
+  </div>
+
+  <div class="arm-block">
+    <button id="arm-toggle" class="arm-toggle">ARM</button>
+    <p class="hint">Hold throttle up to ramp up, down to ease off.<br>Release and it <b>holds</b> for hover.<br>Spacebar or the red button disarms instantly.</p>
+
+    <!-- Drift trim. A quad has no position hold; if it slides steadily to
+         one side, nudge the trim the OPPOSITE way until it sits still.
+         Each press is 1 deg; the setting is saved across reloads. -->
+    <div class="trim-block">
+      <div class="trim-row">
+        <span class="trim-label">ROLL</span>
+        <button class="trim-btn" id="roll-trim-minus" title="Trim left">&#9664;</button>
+        <b class="trim-val" id="roll-trim-val">0&deg;</b>
+        <button class="trim-btn" id="roll-trim-plus" title="Trim right">&#9654;</button>
+      </div>
+      <div class="trim-row">
+        <span class="trim-label">PITCH</span>
+        <button class="trim-btn" id="pitch-trim-minus" title="Trim back">&#9660;</button>
+        <b class="trim-val" id="pitch-trim-val">0&deg;</b>
+        <button class="trim-btn" id="pitch-trim-plus" title="Trim forward">&#9650;</button>
+      </div>
+      <button class="trim-reset" id="trim-reset">RESET TRIM</button>
+    </div>
+  </div>
+
+  <div class="stick-block">
+    <div class="stick-label">PITCH / ROLL</div>
+    <div class="stick" id="stick-right"><div class="stick-knob"></div></div>
+  </div>
+</footer>
+
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

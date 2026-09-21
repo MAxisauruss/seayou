@@ -1,0 +1,8 @@
+aiohttp>=3.9
+pyserial>=3.5
+
+# picamera2 is NOT installed via pip on Raspberry Pi OS - it ships as a
+# system package tied to libcamera, and must be installed with apt instead:
+#   sudo apt install -y python3-picamera2
+# It is imported lazily by server.py, so the dashboard and flight control
+# still work without it; only the video stream will be unavailable.

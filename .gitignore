@@ -24,3 +24,24 @@ dist-ssr
 *.sw?
 *.wsuo
 *VSWorkSpaceState.json
+
+# --- SeaYou ---------------------------------------------------------------
+# NEVER commit these. seayou_station.json holds the drone and viewer tokens
+# the ground station issues, users.json holds the dashboard accounts. Both
+# are written next to the built .exe at runtime, and this repository is
+# public.
+seayou_station.json
+users.json
+
+# Build output: the packaged ground station, the PyInstaller work dir, the
+# Pico SDK build tree, and Python caches.
+*.exe
+groundstation/build/
+groundstation/dist/
+firmware/build/
+__pycache__/
+*.pyc
+
+# Flight logs - written per flight, sometimes hundreds of megabytes.
+flight_*.csv
+*.bak-*

@@ -1,0 +1,16 @@
+[Unit]
+Description=SeaYou drone dashboard (Pi5 bridge to Pico + web UI)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/dashboard
+ExecStart=/usr/bin/python3 /home/pi/dashboard/server.py
+Restart=on-failure
+RestartSec=2
+StandardOutput=append:/home/pi/dashboard/dashboard.log
+StandardError=append:/home/pi/dashboard/dashboard.log
+
+[Install]
+WantedBy=multi-user.target

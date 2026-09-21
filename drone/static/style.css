@@ -1,0 +1,428 @@
+:root {
+  --bg: #0b1016;
+  --panel: #121a24;
+  --panel-2: #17212c;
+  --border: #253244;
+  --text: #e7edf5;
+  --text-dim: #8b9ab0;
+  --accent: #35c2e0;
+  --good: #34d399;
+  --warn: #f5b843;
+  --bad: #f0553f;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------- topbar ---------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand-mark { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.02em; color: var(--accent); }
+.brand-sub { font-size: 0.85rem; color: var(--text-dim); }
+
+.status-cluster { display: flex; gap: 10px; flex: 1; }
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.status-pill .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--bad);
+  transition: background 0.2s;
+}
+.status-pill.ok .dot { background: var(--good); }
+.status-pill.warn .dot { background: var(--warn); }
+
+.estop {
+  background: var(--bad);
+  color: #fff;
+  border: none;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.estop:active { transform: translateY(1px); }
+
+.shutdown-btn {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.shutdown-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.shutdown-btn:active { transform: translateY(1px); }
+.shutdown-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------------- stage ---------------- */
+
+.stage {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  gap: 1px;
+  background: var(--border);
+}
+
+.video-panel {
+  flex: 1;
+  position: relative;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.video-panel img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.video-panel img.broken { display: none; }
+.video-fallback {
+  display: none;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+}
+.video-panel img.broken + .video-fallback { display: block; }
+
+.arm-banner {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  background: rgba(240, 85, 63, 0.15);
+  border: 1px solid var(--bad);
+  color: var(--bad);
+}
+.arm-banner.armed {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: var(--good);
+  color: var(--good);
+}
+
+.telemetry-panel {
+  width: 260px;
+  flex: none;
+  background: var(--panel);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+/* ---------------- artificial horizon ---------------- */
+
+.horizon-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.horizon { width: 100%; max-width: 210px; }
+.horizon-bezel { fill: #06090d; }
+.sky { fill: #2b6ea8; }
+.ground { fill: #6b4a2c; }
+.horizon-line { stroke: #eef3f8; stroke-width: 2; }
+.horizon-ring { fill: none; stroke: var(--border); stroke-width: 3; }
+.center-mark { stroke: var(--warn); stroke-width: 2; }
+
+.horizon-readout {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 210px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+.horizon-readout b { display: block; color: var(--text); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+/* ---------------- telemetry rows ---------------- */
+
+.telemetry-rows { display: flex; flex-direction: column; gap: 8px; }
+.trow {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.trow span { color: var(--text-dim); }
+.trow b { font-variant-numeric: tabular-nums; }
+
+/* ---------------- level zero-point ---------------- */
+
+.level-block { display: flex; flex-direction: column; gap: 8px; }
+.level-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.level-btn {
+  padding: 10px;
+  background: var(--panel-2);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.level-btn:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+.level-btn:active:not(:disabled) { transform: translateY(1px); }
+.level-erase {
+  padding: 3px 8px;
+  background: none;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.level-erase:hover:not(:disabled) { color: var(--bad); border-color: var(--bad); }
+.level-btn:disabled,
+.level-erase:disabled { opacity: 0.4; cursor: not-allowed; }
+.level-hint { margin: 0; font-size: 0.7rem; line-height: 1.4; color: var(--text-dim); }
+
+/* ---------------- controls footer ---------------- */
+
+.controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 28px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+.stick-block { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.stick-label { font-size: 0.7rem; letter-spacing: 0.08em; color: var(--text-dim); }
+
+.stick {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, var(--panel-2) 0%, #0d141c 100%);
+  border: 1px solid var(--border);
+  touch-action: none;
+}
+.stick-knob {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 6px rgba(53, 194, 224, 0.15);
+  pointer-events: none;
+}
+
+.arm-block { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.arm-toggle {
+  background: var(--good);
+  color: #06251b;
+  border: none;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 14px 32px;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.arm-toggle.armed { background: var(--bad); color: #fff; }
+.arm-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.hint { font-size: 0.72rem; color: var(--text-dim); text-align: center; max-width: 220px; line-height: 1.4; margin: 0; }
+
+@media (max-width: 720px) {
+  .telemetry-panel { display: none; }
+  .stick { width: 110px; height: 110px; }
+}
+
+/* ---------------- phone held sideways ---------------- */
+/*
+ * A phone in landscape is only ~340-430px tall. Stacking topbar + stage +
+ * a footer full of 140px sticks leaves the camera feed a letterbox slit,
+ * and on the narrower handsets (a 667px-wide phone in landscape still
+ * matches the max-width rule above) the telemetry column disappears
+ * entirely - taking SET LEVEL and the attitude readout with it.
+ *
+ * So: slim the chrome, keep a compact telemetry column, and float the
+ * sticks over the video at the thumb corners rather than stacking them
+ * underneath it. Keyed on height, not width, because height is the axis
+ * that actually runs out.
+ */
+@media (orientation: landscape) and (max-height: 520px) {
+  :root { --tele-w: 180px; }
+
+  .topbar {
+    gap: 10px;
+    padding: 5px 10px;
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+  .brand-sub { display: none; }
+  .brand-mark { font-size: 0.95rem; }
+  .status-cluster { gap: 6px; }
+  .status-pill { padding: 3px 9px; font-size: 0.66rem; }
+  .estop { padding: 7px 15px; font-size: 0.78rem; }
+  .shutdown-btn { padding: 7px 11px; font-size: 0.66rem; }
+
+  /* Explicitly undoes the display:none above - a narrow handset in
+     landscape matches both blocks, and here the column is wanted. */
+  .telemetry-panel {
+    display: flex;
+    width: var(--tele-w);
+    gap: 10px;
+    padding: 8px;
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+  .horizon, .horizon-readout { max-width: 104px; }
+  .horizon-wrap { gap: 6px; }
+  .horizon-readout { font-size: 0.6rem; }
+  .horizon-readout b { font-size: 0.72rem; }
+  .telemetry-rows { gap: 5px; }
+  .trow { padding: 5px 8px; font-size: 0.68rem; gap: 8px; }
+  .trow b { text-align: right; }
+  /* Attitude and SET LEVEL above the fold; the GPS/baro rows are the
+     part worth scrolling for, not the button you came here to press. */
+  .level-block { gap: 6px; order: 1; }
+  .telemetry-rows { order: 2; }
+  .level-btn { padding: 8px; font-size: 0.72rem; }
+  .level-hint { display: none; }
+  /* Keeps "LEVEL ZERO-POINT" and ERASE on one line at this column width. */
+  .level-head { font-size: 0.58rem; letter-spacing: 0.03em; }
+  .level-erase { padding: 2px 6px; font-size: 0.56rem; }
+
+  .controls {
+    position: fixed;
+    left: 0;
+    right: var(--tele-w);
+    bottom: 0;
+    z-index: 5;
+    align-items: flex-end;
+    gap: 0;
+    padding: 0 12px 12px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    background: none;
+    border-top: none;
+    /* The bar spans the whole video, but only the controls themselves
+       should swallow touches - anywhere else falls through to the feed. */
+    pointer-events: none;
+  }
+  .stick-block, .arm-block { pointer-events: auto; gap: 0; }
+  .stick-label, .hint { display: none; }
+
+  .stick {
+    width: 104px;
+    height: 104px;
+    /* Translucent, since it now sits on top of the camera feed. */
+    background: radial-gradient(circle at 50% 50%, rgba(23, 33, 44, 0.72) 0%, rgba(13, 20, 28, 0.72) 100%);
+  }
+  .stick-knob {
+    width: 42px;
+    height: 42px;
+    box-shadow: 0 0 0 4px rgba(53, 194, 224, 0.18);
+  }
+
+  .arm-toggle { padding: 10px 24px; font-size: 0.88rem; }
+  .arm-banner { top: 8px; left: 8px; padding: 4px 10px; font-size: 0.7rem; }
+}
+
+/* ---------------- drift trim ---------------- */
+.trim-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.trim-row { display: flex; align-items: center; gap: 8px; }
+.trim-label { width: 42px; font-size: 0.68rem; letter-spacing: 0.06em; color: var(--text-dim); }
+.trim-btn {
+  width: 34px; height: 30px;
+  background: var(--panel);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.trim-btn:hover { border-color: var(--accent); }
+.trim-btn:active { transform: translateY(1px); }
+.trim-val {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+.trim-reset {
+  margin-top: 2px;
+  padding: 4px;
+  background: none;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.trim-reset:hover { color: var(--text); border-color: var(--text-dim); }
