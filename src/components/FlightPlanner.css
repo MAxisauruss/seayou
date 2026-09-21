@@ -526,3 +526,17 @@
   line-height: 1.5;
   color: #9fb2cc;
 }
+
+/* A waypoint's name, when a pattern gave it one ("Datum"). Sits beside the
+   number badge rather than inside it. */
+.wp-tag {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(233, 196, 0, 0.18);
+  color: #f2e2a0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

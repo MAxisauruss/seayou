@@ -45,6 +45,17 @@ const PIN_COLOURS = {
   done: "#6b7787",
 };
 
+/**
+ * Just the number for the pin itself. Labels can carry a name - the
+ * search patterns mark their datum as "1 Datum" - and a 26px circle has
+ * room for the number and nothing else. The full label still appears in
+ * the plan list and the tooltip, where there is space for it.
+ */
+function pinNumber(label: string | undefined, index: number): string {
+  const first = (label ?? "").trim().split(/\s+/)[0];
+  return /^\d+$/.test(first) ? first : String(index + 1);
+}
+
 function pinIcon(label: string, kind: keyof typeof PIN_COLOURS): L.DivIcon {
   return L.divIcon({
     className: "wp-pin",
@@ -185,7 +196,7 @@ export default function FlightPlanner() {
             ? "done"
             : "normal";
       const marker = L.marker([w.lat, w.lon], {
-        icon: pinIcon(w.label ?? String(i + 1), kind),
+        icon: pinIcon(pinNumber(w.label, i), kind),
         draggable: run.state !== "flying",
         zIndexOffset: 500,
       });
@@ -488,7 +499,10 @@ export default function FlightPlanner() {
                   flying && i === run.index ? "is-active" : run.state !== "idle" && i < run.index ? "is-done" : ""
                 }
               >
-                <span className="wp-no">{w.label ?? i + 1}</span>
+                <span className="wp-no">{pinNumber(w.label, i)}</span>
+                {w.label && !/^\d+$/.test(w.label) && (
+                  <span className="wp-tag">{w.label.replace(/^\d+\s*/, "")}</span>
+                )}
                 <span className="wp-ll">
                   {w.lat.toFixed(5)}, {w.lon.toFixed(5)}
                 </span>

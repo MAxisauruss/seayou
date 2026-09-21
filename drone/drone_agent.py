@@ -358,32 +358,32 @@ class GroundStationLink(PicoLink):
             log.debug("frame send failed", exc_info=True)
 
     # --- the autonomy hook -----------------------------------------
-    def _battery_failsafe(self, control, link_fresh, now=None):
-        """Low-pack handling. Runs every cycle, before anything else decides.
-
-        Entirely on the Pi: the guard reads the INA219 through telemetry the
-        Pi already has, and commands the Pi's own mission code. A pack that
-        goes flat with the ground station gone is still brought down.
-
-        Returns True if it started something, so the caller knows a mission is
-        now running that it did not start.
-
-        Three things it deliberately does NOT do:
-
-          * Act on the ground. land() commands throttle, so running it on a
-            drone sitting in the grass spins the motors back up. Nothing
-            happens below ON_GROUND_M.
-          * Act with no barometer. Every descent this can command needs
-            height. Without it the only honest thing is to warn.
-          * Hold the pilot out. A stick input aborts a battery return exactly
-            like any other mission - but the guard is latched, so it comes
-            back after BATTERY_PILOT_GRACE_S if the pilot goes passive again.
-            Authority to the pilot, without abandoning the aircraft.
-        """
-        if self.mission is None or self._battery_guard is None:
-            return False
-
-        telemetry = self._latest_telemetry or {}
+    def _battery_failsafe(self, control, link_fresh, now=None):
+        """Low-pack handling. Runs every cycle, before anything else decides.
+
+        Entirely on the Pi: the guard reads the INA219 through telemetry the
+        Pi already has, and commands the Pi's own mission code. A pack that
+        goes flat with the ground station gone is still brought down.
+
+        Returns True if it started something, so the caller knows a mission is
+        now running that it did not start.
+
+        Three things it deliberately does NOT do:
+
+          * Act on the ground. land() commands throttle, so running it on a
+            drone sitting in the grass spins the motors back up. Nothing
+            happens below ON_GROUND_M.
+          * Act with no barometer. Every descent this can command needs
+            height. Without it the only honest thing is to warn.
+          * Hold the pilot out. A stick input aborts a battery return exactly
+            like any other mission - but the guard is latched, so it comes
+            back after BATTERY_PILOT_GRACE_S if the pilot goes passive again.
+            Authority to the pilot, without abandoning the aircraft.
+        """
+        if self.mission is None or self._battery_guard is None:
+            return False
+
+        telemetry = self._latest_telemetry or {}
         now = time.monotonic() if now is None else now
 
         gps_now = telemetry.get("gps") or {}
@@ -402,66 +402,66 @@ class GroundStationLink(PicoLink):
 
         level = self._battery_guard.update(telemetry.get("battery"), now=now,
                                           distance_home_m=distance_home_m)
-
-        gps = telemetry.get("gps") or {}
-        baro = telemetry.get("baro") or {}
-        height = baro.get("height_m")
-
-        # --- home capture ------------------------------------------------
-        # Whenever the aircraft is on the ground with a fix, that is home.
-        # Updated continuously rather than latched once: the last place it
-        # sat on the ground is a better home than wherever it first booted.
-        if (height is not None and height < ON_GROUND_M
-                and gps.get("has_fix") and gps.get("lat") is not None):
-            self.mission.set_home(gps["lat"], gps["lon"])
-
-        if level not in ("return", "land_now"):
-            return False
-
-        # --- only in the air ---------------------------------------------
-        if height is None:
-            if not self._battery_no_baro_logged:
-                log.error("BATTERY %s but there is no barometer - cannot "
-                          "descend under control. Land it manually NOW.",
-                          level.upper())
-                self._battery_no_baro_logged = True
-            return False
-        if height < ON_GROUND_M:
-            return False
-
-        # --- the pilot's grace period -------------------------------------
-        if now < self._battery_override_until:
-            return False
-        if link_fresh and _pilot_is_commanding(control):
-            # Pilot is flying it. Let them, and check again shortly.
-            self._battery_override_until = now + BATTERY_PILOT_GRACE_S
-            return False
-
-        state = self.mission.state
-
-        # --- land_now beats everything, including a return in progress ----
-        if level == "land_now":
-            if state == "landing":
-                return False
-            ok, message = self.mission.land(telemetry)
-            if ok:
-                log.warning("BATTERY CRITICAL - landing immediately (%s)",
-                            self._battery_guard.reason)
-            else:
-                log.error("BATTERY CRITICAL and cannot land: %s", message)
-            return ok
-
-        # --- return home --------------------------------------------------
-        if self._battery_returning or state == "landing":
-            return False
-        ok, message = self.mission.return_home(telemetry)
-        if ok:
-            self._battery_returning = True
-            log.warning("BATTERY LOW - %s", message)
-        else:
-            log.error("BATTERY LOW and cannot return or land: %s", message)
-        return ok
-
+
+        gps = telemetry.get("gps") or {}
+        baro = telemetry.get("baro") or {}
+        height = baro.get("height_m")
+
+        # --- home capture ------------------------------------------------
+        # Whenever the aircraft is on the ground with a fix, that is home.
+        # Updated continuously rather than latched once: the last place it
+        # sat on the ground is a better home than wherever it first booted.
+        if (height is not None and height < ON_GROUND_M
+                and gps.get("has_fix") and gps.get("lat") is not None):
+            self.mission.set_home(gps["lat"], gps["lon"])
+
+        if level not in ("return", "land_now"):
+            return False
+
+        # --- only in the air ---------------------------------------------
+        if height is None:
+            if not self._battery_no_baro_logged:
+                log.error("BATTERY %s but there is no barometer - cannot "
+                          "descend under control. Land it manually NOW.",
+                          level.upper())
+                self._battery_no_baro_logged = True
+            return False
+        if height < ON_GROUND_M:
+            return False
+
+        # --- the pilot's grace period -------------------------------------
+        if now < self._battery_override_until:
+            return False
+        if link_fresh and _pilot_is_commanding(control):
+            # Pilot is flying it. Let them, and check again shortly.
+            self._battery_override_until = now + BATTERY_PILOT_GRACE_S
+            return False
+
+        state = self.mission.state
+
+        # --- land_now beats everything, including a return in progress ----
+        if level == "land_now":
+            if state == "landing":
+                return False
+            ok, message = self.mission.land(telemetry)
+            if ok:
+                log.warning("BATTERY CRITICAL - landing immediately (%s)",
+                            self._battery_guard.reason)
+            else:
+                log.error("BATTERY CRITICAL and cannot land: %s", message)
+            return ok
+
+        # --- return home --------------------------------------------------
+        if self._battery_returning or state == "landing":
+            return False
+        ok, message = self.mission.return_home(telemetry)
+        if ok:
+            self._battery_returning = True
+            log.warning("BATTERY LOW - %s", message)
+        else:
+            log.error("BATTERY LOW and cannot return or land: %s", message)
+        return ok
+
     def _select_control(self, control: dict) -> dict:
         """Called every cycle by the inherited flight loop.
 
