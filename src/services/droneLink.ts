@@ -260,6 +260,25 @@ export interface DroneBatteryGuard {
   pack_v: number | null;
   cells: number;
   thresholds: { warn: number; return: number; land_now: number };
+  /**
+   * The distance-aware return reserve (battery_guard.py).
+   *
+   * The aircraft holds back enough pack to fly home from wherever it
+   * currently is, so the further out it goes the earlier it turns back.
+   * `headroom_v` is what is left before it does that on its own -
+   * negative means it already has. All-null means the reserve is not
+   * active (no fix or no home recorded) and the fixed threshold is in
+   * charge instead.
+   */
+  reserve?: {
+    distance_home_m: number | null;
+    time_home_s: number | null;
+    reserve_v: number;
+    return_at_v: number;
+    headroom_v: number | null;
+    fall_v_per_min: number | null;
+    measured: boolean;
+  } | null;
 }
 
 /** What each refusal from the firmware actually means. */

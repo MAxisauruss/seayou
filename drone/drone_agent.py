@@ -72,6 +72,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
     from mission import Mission
     from mission import ON_GROUND_M
+    from mission import haversine_ne
     from battery_guard import BatteryGuard
 except ImportError:
     Mission = None
@@ -384,7 +385,23 @@ class GroundStationLink(PicoLink):
 
         telemetry = self._latest_telemetry or {}
         now = time.monotonic() if now is None else now
-        level = self._battery_guard.update(telemetry.get("battery"), now=now)
+
+        gps_now = telemetry.get("gps") or {}
+        # How far it would have to fly to get back, so the guard can hold
+        # back enough pack to do it. None whenever that cannot be known -
+        # no fix, or no home recorded - and the guard then falls back to
+        # its fixed threshold rather than guessing a distance.
+        distance_home_m = None
+        if (self.mission.home is not None and gps_now.get("has_fix")
+                and gps_now.get("lat") is not None
+                and gps_now.get("lon") is not None):
+            north, east = haversine_ne(gps_now["lat"], gps_now["lon"],
+                                       self.mission.home[0],
+                                       self.mission.home[1])
+            distance_home_m = math.hypot(north, east)
+
+        level = self._battery_guard.update(telemetry.get("battery"), now=now,
+                                          distance_home_m=distance_home_m)
 
         gps = telemetry.get("gps") or {}
         baro = telemetry.get("baro") or {}

@@ -1,0 +1,528 @@
+/* Flight planner: map on the left, the plan and its controls on the right. */
+
+.planner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 24rem;
+  height: 100%;
+  width: 100%;
+  background: #050b14;
+  color: #e6edf6;
+}
+
+.planner-map {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  background: #050b14;
+  cursor: crosshair;
+}
+
+.planner-map.leaflet-container {
+  background: #050b14;
+  font-family: inherit;
+}
+
+/* Same dark basemap treatment as DroneMap, for the same reason: a white
+   map in a dark ops view is blinding at night. */
+.planner-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.75);
+}
+
+.planner-map .leaflet-control-zoom a {
+  background: rgba(10, 18, 30, 0.9);
+  color: #e6edf6;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.planner-map .leaflet-control-attribution {
+  background: rgba(5, 11, 20, 0.7);
+  color: #7c8ba0;
+  font-size: 9px;
+}
+
+/* -- pins --------------------------------------------------------------- */
+
+.wp-pin-inner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--pin);
+  color: #04101c;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  cursor: grab;
+}
+
+.wp-drone-body {
+  fill: #35d07f;
+  stroke: #fff;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.wp-drone-halo {
+  fill: rgba(53, 208, 127, 0.18);
+  stroke: rgba(53, 208, 127, 0.6);
+  stroke-width: 1;
+}
+
+/* -- panel -------------------------------------------------------------- */
+
+.planner-panel {
+  overflow-y: auto;
+  padding: 16px;
+  background: #0a121e;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.planner-head h2 {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #ff6b35;
+}
+
+.planner-head p,
+.planner-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #9fb2cc;
+}
+
+.planner-block {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.planner-block h3 {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #b9c7e4;
+  margin-bottom: 8px;
+}
+
+.planner-count {
+  color: #7c8ba0;
+  font-weight: 600;
+}
+
+.planner-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.planner-row label,
+.planner-full {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.planner-full {
+  margin-top: 10px;
+}
+
+.planner-panel label span {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: #7c8ba0;
+}
+
+.planner-panel input,
+.planner-panel select {
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #050b14;
+  color: #e6edf6;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-panel input:disabled {
+  opacity: 0.5;
+}
+
+.planner-panel input[type="range"] {
+  padding: 0;
+  accent-color: #ff6b35;
+}
+
+.planner-link {
+  background: none;
+  border: none;
+  color: #ff6b35;
+  font-size: 9px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* -- buttons ------------------------------------------------------------ */
+
+.planner-btn {
+  margin-top: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 107, 53, 0.6);
+  background: rgba(255, 107, 53, 0.16);
+  color: #ffd2bf;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.planner-btn:hover:not(:disabled) {
+  background: rgba(255, 107, 53, 0.3);
+  color: #fff;
+}
+
+.planner-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.planner-btn.ghost {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cfd9e6;
+}
+
+.planner-btn.danger {
+  border-color: rgba(255, 60, 60, 0.6);
+  background: rgba(255, 60, 60, 0.18);
+  color: #ffc9c9;
+}
+
+.planner-btn.as-label {
+  text-align: center;
+}
+
+.planner-btn.as-label input {
+  display: none;
+}
+
+.planner-tools {
+  flex-wrap: wrap;
+}
+
+.planner-tools .planner-btn {
+  margin-top: 0;
+  flex: 1;
+  min-width: 88px;
+  padding: 8px 6px;
+}
+
+/* -- plan list ---------------------------------------------------------- */
+
+.planner-stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.planner-stats div {
+  flex: 1;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-stats em {
+  display: block;
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: #7c8ba0;
+}
+
+.planner-list {
+  list-style: none;
+  max-height: 190px;
+  overflow-y: auto;
+  margin: 0 -4px;
+}
+
+.planner-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-list li.is-active {
+  background: rgba(53, 208, 127, 0.14);
+}
+
+.planner-list li.is-done {
+  opacity: 0.45;
+}
+
+.wp-no {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255, 107, 53, 0.25);
+  color: #ffb999;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wp-ll {
+  flex: 1;
+  color: #cfd9e6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planner-panel .wp-alt {
+  /* Beats `.planner-panel input { width: 100% }`, which otherwise
+     stretches this box and shoves the delete button off the panel. */
+  width: 54px;
+  flex: none;
+  padding: 3px 5px;
+  font-size: 10px;
+}
+
+.wp-del {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #9fb2cc;
+  cursor: pointer;
+}
+
+.wp-del:hover:not(:disabled) {
+  border-color: rgba(255, 60, 60, 0.6);
+  color: #ffc9c9;
+}
+
+.planner-empty {
+  font-size: 11px;
+  color: #7c8ba0;
+  padding: 6px 0;
+}
+
+/* -- messages ----------------------------------------------------------- */
+
+.planner-error,
+.planner-warn,
+.planner-note {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 7px 9px;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+
+.planner-error {
+  background: rgba(255, 60, 60, 0.12);
+  border: 1px solid rgba(255, 60, 60, 0.3);
+  color: #ffc9c9;
+}
+
+.planner-warn {
+  background: rgba(233, 196, 0, 0.1);
+  border: 1px solid rgba(233, 196, 0, 0.3);
+  color: #f2e2a0;
+}
+
+.planner-note {
+  background: rgba(255, 255, 255, 0.05);
+  color: #9fb2cc;
+}
+
+.planner-run {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  color: #cfd9e6;
+  margin-bottom: 4px;
+}
+
+.planner-run strong {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #b9c7e4;
+}
+
+.planner-run.state-flying {
+  border-color: rgba(53, 208, 127, 0.5);
+  background: rgba(53, 208, 127, 0.1);
+}
+
+.planner-run.state-finished {
+  border-color: rgba(53, 208, 127, 0.4);
+}
+
+.planner-run.is-problem {
+  border-color: rgba(255, 60, 60, 0.5);
+  background: rgba(255, 60, 60, 0.1);
+  color: #ffc9c9;
+}
+
+.planner-confirm {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 7px;
+  background: rgba(255, 60, 60, 0.08);
+  border: 1px solid rgba(255, 60, 60, 0.3);
+}
+
+.planner-confirm p {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #ffd9d9;
+}
+
+.planner-confirm .planner-row .planner-btn {
+  margin-top: 8px;
+}
+
+/* -- narrow ------------------------------------------------------------- */
+
+@media (max-width: 1023px) {
+  .planner {
+    grid-template-columns: 1fr;
+    grid-template-rows: 55vh 1fr;
+  }
+
+  .planner-panel {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* -- the page shell around the planner ---------------------------------- */
+
+.flight-plan-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #050b14;
+}
+
+.flight-plan-bar {
+  flex: none;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  background: #0a121e;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.flight-plan-bar h1 {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #e6edf6;
+}
+
+.fp-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cfd9e6;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.fp-back:hover {
+  border-color: rgba(255, 107, 53, 0.5);
+  color: #fff;
+}
+
+.fp-back .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.flight-plan-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* -- return reserve ----------------------------------------------------- */
+
+.planner-reserve {
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: rgba(53, 208, 127, 0.08);
+  border: 1px solid rgba(53, 208, 127, 0.3);
+}
+
+.planner-reserve.is-low {
+  background: rgba(233, 196, 0, 0.1);
+  border-color: rgba(233, 196, 0, 0.45);
+}
+
+.planner-reserve.is-spent {
+  background: rgba(255, 60, 60, 0.12);
+  border-color: rgba(255, 60, 60, 0.5);
+}
+
+.res-row {
+  font-size: 11px;
+  color: #e6edf6;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 3px;
+}
+
+.res-row em {
+  display: inline-block;
+  min-width: 96px;
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: #7c8ba0;
+}
+
+.res-note {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #9fb2cc;
+}

@@ -112,6 +112,69 @@ PERSIST_S = 3.0
 #: glitched. It is reported so the pilot can decide.
 STALE_AFTER_S = 10.0
 
+# ---------------------------------------------------------------------------
+# The return-home reserve
+# ---------------------------------------------------------------------------
+# RETURN_V on its own is a FIXED threshold, and a fixed threshold cannot
+# answer the only question that matters: is there enough left to get back
+# from where the aircraft actually is? 3.40 V/cell is generous hovering
+# over the launch point and can be far too late 280 m downwind at the far
+# corner of a search grid.
+#
+# So the return threshold moves. The further out the aircraft is, the
+# earlier it turns for home - by exactly the voltage the trip home is
+# predicted to cost.
+#
+# HOW THE PREDICTION WORKS, AND WHAT IT IS WORTH
+# ----------------------------------------------
+# There is no current sensor on this airframe: the INA219 is wired
+# voltage-only (battery.py, CURRENT_SENSE_WIRED = False), so the pack's
+# remaining energy cannot be measured directly. What CAN be measured is
+# how fast the filtered voltage is falling, in volts per second per cell.
+# Multiply that by the time the trip home will take and you get the
+# voltage it will cost. That is the reserve.
+#
+# It is an estimate, and it is honest about being one: the safety factor
+# below assumes the trip home costs more than the flying done so far
+# (wind is usually worse going back, and the descent and landing are not
+# free), and the reserve is floored so it can never be smaller than the
+# fixed behaviour that existed before.
+
+#: Ground speed the guidance actually flies at, m/s. Must match
+#: mission.py's MAX_SPEED_MS - the reserve is computed against the speed
+#: the aircraft will really make, not one it cannot reach.
+RETURN_CRUISE_MS = 3.0
+
+#: Seconds to add for the descent and landing once it is overhead, plus
+#: the turn and acceleration at the start of the run home.
+RETURN_OVERHEAD_S = 25.0
+
+#: The trip home is assumed to cost this much more than the flight so far
+#: has, per second. Headwind on the way back, and a descent that is not
+#: as cheap as it looks once the aircraft has to arrest it.
+RETURN_SAFETY_FACTOR = 1.5
+
+#: Never reserve less than this, so a distance-aware guard is never LESS
+#: cautious than the fixed threshold it replaced.
+MIN_RESERVE_V = 0.0
+
+#: Never reserve more than this. Past here the estimate is telling us the
+#: pack is falling off a cliff, and the answer to that is LAND_V, not an
+#: ever-growing reserve that grounds the aircraft on the pad.
+MAX_RESERVE_V = 0.45
+
+#: Used until enough flight has been seen to measure the real slope.
+#: Roughly a 3S pack going 4.15 -> 3.40 V/cell over a ten-minute flight.
+DEFAULT_SLOPE_V_PER_S = 0.00125
+
+#: Smoothing for the measured slope. Long, because the number wanted is
+#: the trend over a flight, not the dip from one climb.
+SLOPE_TAU_S = 45.0
+
+#: Samples closer together than this are ignored for the slope - dividing
+#: filter noise by a tiny dt produces a huge fake gradient.
+SLOPE_MIN_DT_S = 1.0
+
 #: Ordered worst-last. Used to enforce the latch.
 LEVELS = ("unknown", "ok", "warn", "return", "land_now")
 
@@ -137,6 +200,13 @@ class BatteryGuard:
         self._below_since = {}      # threshold name -> monotonic time it went under
         self._last_good_t = None
         self._warned_stale = False
+        # Return-reserve state.
+        self._slope = None          # V/s per cell, positive = falling
+        self._slope_v = None        # last cell voltage used for the slope
+        self._slope_t = None
+        self._distance_home_m = None
+        self._t_home_s = None
+        self._reserve_v = 0.0
 
     # -- lifecycle ---------------------------------------------------------
     def reset(self):
@@ -150,14 +220,27 @@ class BatteryGuard:
         self._below_since = {}
         self._last_good_t = None
         self._warned_stale = False
+        self._slope = None
+        self._slope_v = None
+        self._slope_t = None
+        self._distance_home_m = None
+        self._t_home_s = None
+        self._reserve_v = 0.0
         log.info("Battery guard reset - latch cleared.")
 
     # -- the decision ------------------------------------------------------
-    def update(self, battery: dict | None, now: float | None = None) -> str:
+    def update(self, battery: dict | None, now: float | None = None,
+               distance_home_m: float | None = None) -> str:
         """Feed one telemetry sample. Returns the current level.
 
         `battery` is telemetry["battery"], or None when no sensor is fitted.
         The level never goes backwards - see point 2 in the module docstring.
+
+        `distance_home_m` is how far the aircraft is from home right now.
+        Pass it and the return threshold rises by the voltage the trip
+        home is predicted to cost, so the aircraft turns back while it can
+        still get there. Leave it None - no fix, no home - and the guard
+        behaves exactly as it did before, on the fixed threshold.
         """
         now = time.monotonic() if now is None else now
 
@@ -204,9 +287,48 @@ class BatteryGuard:
         self.pack_v = round(self._filt, 3)
         self.cell_v = round(self._filt / self.cells, 3)
 
+        # ---- how fast the pack is falling, volts per second per cell.
+        # Measured off the FILTERED voltage, so a punch-out does not
+        # register as the pack collapsing. Only decline counts: voltage
+        # recovering when the throttle comes back is not the pack
+        # refilling, and letting it drag the estimate down would shrink
+        # the reserve exactly when the aircraft is working hardest.
+        if self._slope_v is not None and self._slope_t is not None:
+            dt = now - self._slope_t
+            if dt >= SLOPE_MIN_DT_S:
+                fall = (self._slope_v - self.cell_v) / dt
+                fall = max(0.0, fall)
+                if self._slope is None:
+                    self._slope = fall
+                else:
+                    a = 1.0 - pow(2.718281828459045, -dt / SLOPE_TAU_S)
+                    self._slope += a * (fall - self._slope)
+                self._slope_v = self.cell_v
+                self._slope_t = now
+        else:
+            self._slope_v = self.cell_v
+            self._slope_t = now
+
+        # ---- what the trip home is predicted to cost, in volts per cell
+        self._distance_home_m = distance_home_m
+        if distance_home_m is None:
+            self._t_home_s = None
+            self._reserve_v = 0.0
+        else:
+            self._t_home_s = (max(0.0, float(distance_home_m)) / RETURN_CRUISE_MS
+                              + RETURN_OVERHEAD_S)
+            slope = DEFAULT_SLOPE_V_PER_S if self._slope is None else max(
+                self._slope, DEFAULT_SLOPE_V_PER_S * 0.25)
+            self._reserve_v = min(
+                MAX_RESERVE_V,
+                max(MIN_RESERVE_V, slope * self._t_home_s * RETURN_SAFETY_FACTOR),
+            )
+
+        return_limit = RETURN_V + self._reserve_v
+
         # ---- which thresholds are breached, and for how long
         candidate = "ok"
-        for name, limit in (("land_now", LAND_V), ("return", RETURN_V), ("warn", WARN_V)):
+        for name, limit in (("land_now", LAND_V), ("return", return_limit), ("warn", WARN_V)):
             if self.cell_v <= limit:
                 first = self._below_since.get(name)
                 if first is None:
@@ -234,6 +356,11 @@ class BatteryGuard:
             return ("pack below %.2f V/cell - finish up and land soon"
                     % WARN_V)
         if level == "return":
+            if self._reserve_v > 0.005 and self._distance_home_m is not None:
+                return ("pack below %.2f V/cell - that is %.2f V plus a %.2f V "
+                        "reserve to fly the %.0f m home - returning now"
+                        % (RETURN_V + self._reserve_v, RETURN_V,
+                           self._reserve_v, self._distance_home_m))
             return ("pack below %.2f V/cell - returning home" % RETURN_V)
         if level == "land_now":
             return ("pack below %.2f V/cell - landing immediately" % LAND_V)
@@ -249,4 +376,24 @@ class BatteryGuard:
             "pack_v": self.pack_v,
             "cells": self.cells,
             "thresholds": {"warn": WARN_V, "return": RETURN_V, "land_now": LAND_V},
+            # What the distance-aware reserve is doing right now. None
+            # everywhere means it is not active - no fix, or no home - and
+            # the fixed threshold is in charge.
+            "reserve": {
+                "distance_home_m": (round(self._distance_home_m, 1)
+                                    if self._distance_home_m is not None else None),
+                "time_home_s": (round(self._t_home_s, 1)
+                                if self._t_home_s is not None else None),
+                "reserve_v": round(self._reserve_v, 3),
+                "return_at_v": round(RETURN_V + self._reserve_v, 3),
+                # Volts per cell still in hand before the aircraft turns
+                # for home on its own. Negative means it already has.
+                "headroom_v": (round(self.cell_v - (RETURN_V + self._reserve_v), 3)
+                               if self.cell_v is not None else None),
+                # The measured discharge slope, per minute, which is the
+                # number a human can sanity-check against the flight.
+                "fall_v_per_min": (round(self._slope * 60.0, 4)
+                                   if self._slope is not None else None),
+                "measured": self._slope is not None,
+            },
         }

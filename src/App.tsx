@@ -3,6 +3,7 @@ import "./css/App.css";
 import AssetMap from "./pages/AssetMap";
 import RescueResponse from "./pages/RescueResponse";
 import LiveFeeds from "./pages/LiveFeeds";
+import FlightPlan from "./pages/FlightPlan";
 import NotFound from "./pages/NotFound";
 import { Page } from "./types";
 
@@ -13,6 +14,7 @@ type PageComponentProps = {
 
 const PAGES: Record<Page, { label: string; component: React.ComponentType<PageComponentProps> }> = {
   "asset-map": { label: "Asset Map", component: AssetMap },
+  "flight-plan": { label: "Flight Plan", component: FlightPlan },
   "rescue-response": { label: "Dashboard", component: RescueResponse },
   "live-feeds": { label: "Live Feeds", component: LiveFeeds },
   // Rescue Logs isn't wired up yet - every nav link that points here (there's

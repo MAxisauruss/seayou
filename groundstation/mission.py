@@ -38,8 +38,11 @@ mission, the Pi's own failsafe sends throttle 0 after 0.5 s. The drone does
 NOT continue the mission on its own. Moving guidance onto the Pi would
 change that, and is the next step for true autonomy.
 """
+import logging
 import math
 import time
+
+log = logging.getLogger(__name__)
 
 # --- limits. Every one of these is a safety bound, not a tuning knob. ---
 
@@ -247,6 +250,15 @@ class Mission:
         self.distance_m = None
         self.bearing_deg = None
         self.interrupted = False
+        # Where "home" is: the last position the aircraft was known to be at
+        # while on the ground with a fix. Set by the caller (drone_agent), not
+        # inferred here - the mission has no idea what "on the ground" means.
+        self.home = None            # (lat, lon) or None
+        # Set by return_home(): on arrival, land instead of loitering. A
+        # normal waypoint mission loiters and waits for the pilot, which is
+        # the wrong ending for a flight that is coming back because the pack
+        # is nearly empty.
+        self._land_on_arrival = False
 
     # --- lifecycle -------------------------------------------------
     def start(self, lat, lon, alt, telemetry):
@@ -283,6 +295,67 @@ class Mission:
         self.distance_m = dist
         self.interrupted = False
         return True, f"mission started - {dist:.0f} m to run"
+
+    def set_home(self, lat, lon):
+        """Record where home is. Called while the aircraft is on the ground."""
+        if lat is None or lon is None:
+            return False
+        first = self.home is None
+        self.home = (float(lat), float(lon))
+        if first:
+            log.info("Home set: %.6f, %.6f", self.home[0], self.home[1])
+        return True
+
+    def return_home(self, telemetry, alt=None):
+        """Fly back to home and land there.
+
+        Falls back to a straight landing whenever going home is not possible -
+        no home recorded, no fix, or out of range. That fallback is the normal
+        case on this airframe today, and it is the right one: a low pack with
+        no navigation still needs to come DOWN, and landing where it is beats
+        staying up until the motors stop.
+
+        Returns (ok, message).
+        """
+        gps = (telemetry or {}).get("gps") or {}
+        baro = (telemetry or {}).get("baro") or {}
+
+        if self.home is None:
+            ok, msg = self.land(telemetry)
+            return ok, ("no home recorded - landing here instead (%s)" % msg
+                        if not ok else "no home recorded - landing here")
+
+        if not gps.get("has_fix") or gps.get("lat") is None or gps.get("lon") is None:
+            ok, msg = self.land(telemetry)
+            return ok, ("no GPS fix - landing here instead (%s)" % msg
+                        if not ok else "no GPS fix - landing here")
+
+        north, east = haversine_ne(gps["lat"], gps["lon"], self.home[0], self.home[1])
+        dist = math.hypot(north, east)
+        if dist > MAX_RANGE_M:
+            ok, msg = self.land(telemetry)
+            return ok, ("home is %.0f m away, past the %.0f m limit - landing here"
+                        % (dist, MAX_RANGE_M))
+
+        # Already there? Just come down.
+        if dist <= ARRIVE_RADIUS_M:
+            ok, msg = self.land(telemetry)
+            return ok, ("already home - landing" if ok else msg)
+
+        # Return at the height it is at now, clamped into the allowed band.
+        # Climbing to a fixed transit height on a nearly flat pack would spend
+        # the reserve this whole feature exists to protect.
+        here = baro.get("height_m")
+        want = alt if alt is not None else (here if here is not None else MIN_ALT_M)
+        want = max(MIN_ALT_M, min(MAX_ALT_M, float(want)))
+
+        ok, message = self.start(self.home[0], self.home[1], want, telemetry)
+        if ok:
+            self._land_on_arrival = True
+            return True, "returning home - %.0f m to run, landing on arrival" % dist
+        # start() refused. Come down where we are rather than staying up.
+        ok, msg = self.land(telemetry)
+        return ok, ("cannot navigate home (%s) - landing here" % message)
 
     def hold_here(self, telemetry, reason):
         """Stop travelling and loiter at the CURRENT position.
@@ -379,6 +452,10 @@ class Mission:
         self.started_at = time.monotonic()
         self.last_fix_at = time.monotonic()
         return True, "landing from %.1f m" % alt_now
+
+    def clear_return(self):
+        """Forget any pending land-on-arrival. Used when a leg is replaced."""
+        self._land_on_arrival = False
 
     def abort(self, reason="aborted by operator"):
         # Includes takeoff and landing, so a stick input still takes the
@@ -504,6 +581,15 @@ class Mission:
         alt = baro.get("height_m")
         arrived_alt = alt is None or abs(alt - self.target_alt) < 1.0
         if self.state == "running" and dist <= ARRIVE_RADIUS_M and arrived_alt:
+            if self._land_on_arrival:
+                # Came back on a low pack. Do not loiter waiting for a pilot
+                # who may not be watching - put it on the ground.
+                self._land_on_arrival = False
+                ok, message = self.land(telemetry)
+                if ok:
+                    log.warning("Home reached - landing.")
+                    return self._vertical_step(alt, base_control)
+                log.error("Home reached but cannot land (%s) - holding.", message)
             self.state = "holding"
             self.reason = "arrived - holding position, take over when ready"
 

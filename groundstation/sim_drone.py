@@ -32,6 +32,29 @@ import aiohttp
 
 from mission import Mission
 
+# The battery failsafe the AIRCRAFT runs, imported rather than reimplemented.
+# A simulator with its own copy of the failsafe logic tests the copy, not the
+# thing that flies. It lives with the drone software; find it in either
+# layout (the repository's drone/, or the working tree's "Raspberry Pi 5").
+def _load_battery_guard():
+    import os
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    for rel in ("../drone", "../Raspberry Pi 5/dashboard"):
+        path = os.path.normpath(os.path.join(here, rel))
+        if os.path.isfile(os.path.join(path, "battery_guard.py")):
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            try:
+                from battery_guard import BatteryGuard
+                return BatteryGuard
+            except Exception:
+                return None
+    return None
+
+
+BatteryGuard = _load_battery_guard()
+
 # Muizenberg beach, Cape Town - an NSRI-relevant starting point.
 START_LAT = -34.1083
 START_LON = 18.4700
@@ -92,6 +115,14 @@ class SimDrone:
         # the simulator has to have the same architecture as the aircraft
         # or testing against it proves nothing about the aircraft.
         self.mission = Mission()
+        # A simulated 3S pack, so the return reserve can be exercised with
+        # no aircraft. Starts part-used on purpose: a full pack takes ten
+        # minutes to tell you anything.
+        self.pack_cell_v = 3.95
+        self.guard = BatteryGuard() if BatteryGuard else None
+        self._guard_returning = False
+        #: Minutes of hovering the simulated pack lasts, full to empty.
+        self.pack_minutes = 12.0
         self.detect_after = detect_after
         self.detection_confirmed = False
         self.mission_started_at = 0.0
@@ -290,6 +321,63 @@ class SimDrone:
         self.motors = [max(0, min(1000, base + random.randint(-spread, spread)))
                        for _ in range(4)] if thr > 0 else [0, 0, 0, 0]
 
+        self._step_battery(dt, thr)
+
+
+    def _step_battery(self, dt: float, throttle: float):
+        """Drain the simulated pack, then let the REAL guard decide.
+
+        The drain is deliberately crude - hovering costs a steady rate and
+        throttle above hover costs more. It is not a discharge model; it
+        exists so the return reserve has something realistic to measure,
+        and so a search can be flown until the aircraft decides it has to
+        come home.
+        """
+        # Home capture, mirroring drone_agent.py: wherever it sits on the
+        # ground with a fix is home. Without this the guard has no distance
+        # to reserve against and silently falls back to the fixed threshold,
+        # which is exactly the behaviour the reserve exists to replace.
+        if self.with_gps and self.height < 0.3:
+            self.mission.set_home(self.lat, self.lon)
+
+        if self.height <= 0.05 and throttle <= 0:
+            return
+        # Full to empty over pack_minutes of hovering, worse under power.
+        span_v = 4.15 - 3.10
+        per_s = span_v / (self.pack_minutes * 60.0)
+        load = 0.6 + (throttle / 45.0)
+        self.pack_cell_v = max(2.8, self.pack_cell_v - per_s * load * dt)
+
+        if self.guard is None:
+            return
+
+        # Sag under load, so the guard sees the same awkward signal the
+        # real one does rather than a clean ramp.
+        sag = 0.12 * (throttle / 50.0)
+        measured = max(2.5, self.pack_cell_v - sag)
+        battery = {"voltage_v": round(measured * 3, 3)}
+
+        distance_home_m = None
+        if self.with_gps and self.mission.home is not None:
+            north = (self.lat - self.mission.home[0]) * M_PER_DEG_LAT
+            east = ((self.lon - self.mission.home[1]) * M_PER_DEG_LAT
+                    * math.cos(math.radians(self.lat)))
+            distance_home_m = math.hypot(north, east)
+
+        level = self.guard.update(battery, distance_home_m=distance_home_m)
+
+        # Act on it exactly as drone_agent.py does: land_now beats a
+        # return in progress, and a return cancels whatever the mission
+        # was doing - including a search someone is part way through.
+        if self.height < 0.3:
+            return
+        if level == "land_now":
+            if self.mission.state != "landing":
+                self.mission.land(self.telemetry())
+        elif level == "return" and not self._guard_returning:
+            ok, _ = self.mission.return_home(self.telemetry())
+            self._guard_returning = ok
+
     def telemetry(self) -> dict:
         # Sea-level pressure falling with height, matching the real
         # barometer's ~0.1 hPa resolution so the UI sees the same
@@ -344,6 +432,11 @@ class SimDrone:
                      "height_m": round(baro_height, 2)},
             "level": {"state": "idle", "busy": False, "result": None,
                       "roll_offset_deg": -4.5, "pitch_offset_deg": 0.12},
+            "battery": {"voltage_v": round(self.pack_cell_v * 3, 3),
+                        "cells": 3,
+                        "cell_v": round(self.pack_cell_v, 3),
+                        "note": "simulated pack"},
+            "battery_guard": self.guard.status() if self.guard else None,
             "i2c_faults": 0,
             "gyro_cal_ok": True,
             "ekf_nan": False,
@@ -406,6 +499,7 @@ async def flight_loop(sim):
 
 async def run(args):
     sim = SimDrone(not args.no_gps, args.sats, args.detect_after)
+    sim.pack_minutes = max(0.5, args.pack_minutes)
     sim.autonomous_on_link_loss = args.autonomous_on_link_loss
     asyncio.ensure_future(flight_loop(sim))
     url = args.ground_station
@@ -465,6 +559,10 @@ def main():
     ap.add_argument("--no-gps", action="store_true",
                     help="simulate the real aircraft's dead GPS (0 satellites)")
     ap.add_argument("--sats", type=int, default=11)
+    ap.add_argument("--pack-minutes", type=float, default=12.0,
+                    help="how long the simulated pack lasts hovering, "
+                         "minutes. Set it low (2-3) to watch the return "
+                         "reserve cancel a search without waiting.")
     ap.add_argument("--autonomous-on-link-loss", action="store_true",
                     help="keep flying a mission when the ground station "
                          "goes away, matching the agent's flag of the same "

@@ -70,6 +70,20 @@ export default function AssetMap({ onNavigate, activePage }: AssetMapProps) {
             </span>
             <span className="font-label-caps text-label-caps">Asset Map</span>
           </button>
+          {/* The planner is a working tool rather than part of the
+              operations mock-up, so it is reached from the map - which is
+              where you are when you decide where to search. */}
+          <button
+            className={`text-on-surface-variant hover:text-on-surface flex items-center gap-3 px-4 py-3 mx-2 hover:bg-white/5 transition-all ${
+              activePage === "flight-plan" ? "bg-[#FF6B35]/10 rounded-lg" : ""
+            }`}
+            onClick={() => onNavigate?.("flight-plan")}
+          >
+            <span className="material-symbols-outlined" data-icon="add">
+              add
+            </span>
+            <span className="font-label-caps text-label-caps">Flight Plan</span>
+          </button>
           <button
             className={`text-on-surface-variant hover:text-on-surface flex items-center gap-3 px-4 py-3 mx-2 hover:bg-white/5 transition-all ${
               activePage === "live-feeds" ? "bg-[#FF6B35]/10 rounded-lg" : ""
