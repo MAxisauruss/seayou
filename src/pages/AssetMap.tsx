@@ -1,5 +1,6 @@
 import "./AssetMap.css";
 import { Page } from "../types";
+import DroneMap from "../components/DroneMap";
 
 interface AssetMapProps {
   onNavigate: (page: Page) => void;
@@ -132,15 +133,16 @@ export default function AssetMap({ onNavigate, activePage }: AssetMapProps) {
 
       {/* Main Content Area */}
       <main className="md:ml-64 pt-16 h-screen relative flex flex-col">
-        {/* Interactive Bathymetric Map */}
+        {/* Live drone map. This was a still image of a nautical chart -
+            it is now the real thing, driven by the GPS dongle on the Pi.
+            The overlay panels below are still design mock-ups. */}
         <div className="absolute inset-0 z-0 bg-[#050B14]">
-          <img
-            className="w-full h-full object-cover opacity-60"
-            alt="A dark-mode nautical chart showing ocean bathymetry, coastline, and glowing current vectors"
-            data-location="Coastal North Sea"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_glNTBZkc94BAx0x0uNTYMndbb4mCtbAcV4J2CUuMxRVI-axzuY6CnleUlDC09UeY5Svgpl4klBjSWSX1EklPNVCiuJPr2kdcEyC7Jsev3xcnn_WDRpZcV4RVxpZ09ZtY2cFEa9ZzkiAowjRqmlqvFULiQtAPPjYEa_CckTlc8P0mbg4PfC0L3M1vHg9NOkQUtnKgE9zlj3nnossp_qfrMuliSZhAgg5004-h7nJ4erV75p2yxugP3iBmTFOyYLRjNFOx9bcIx9w"
-          />
-          <div className="absolute inset-0 map-overlay pointer-events-none"></div>
+          {/* The floats below are drawn OVER this map, so tell it which
+              edges are hidden - otherwise "follow" parks the drone dead
+              centre, behind the drift-prediction panel. Left/right are
+              the w-80 panels plus their 8-unit offset; the bottom is the
+              projection timeline. */}
+          <DroneMap insets={{ top: 0, right: 352, bottom: 190, left: 352 }} />
         </div>
 
         {/* Left Float: Search Inputs */}
@@ -290,23 +292,11 @@ export default function AssetMap({ onNavigate, activePage }: AssetMapProps) {
           </div>
         </div>
 
-        {/* Coordinates Display Overlay */}
-        <div className="absolute bottom-4 right-4 z-10">
-          <div className="px-4 py-2 bg-surface-container-lowest/80 backdrop-blur rounded border border-white/5 flex gap-6">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-label-caps text-on-surface-variant">CURSOR LAT</span>
-              <span className="font-telemetry-sm text-telemetry-sm text-primary">52.124.992</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[9px] font-label-caps text-on-surface-variant">CURSOR LONG</span>
-              <span className="font-telemetry-sm text-telemetry-sm text-primary">04.188.012</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[9px] font-label-caps text-on-surface-variant">DEPTH</span>
-              <span className="font-telemetry-sm text-telemetry-sm text-tertiary">-42.4M</span>
-            </div>
-          </div>
-        </div>
+        {/* The mock-up had a hardcoded CURSOR LAT / LONG / DEPTH readout
+            here. Removed: the map below it is now real, and invented
+            coordinates sitting on a real map are indistinguishable from
+            live ones. DroneMap's own status strip shows the true
+            position, or says plainly that there is no fix. */}
       </main>
 
       {/* Mobile BottomNavBar */}

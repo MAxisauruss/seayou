@@ -237,7 +237,7 @@ export default function Analytics({ onNavigate, activePage }: AnalyticsProps) {
               <img
                 alt="A top-down satellite view of a wide sandy beach meeting the ocean, color-graded in a dark tactical monochromatic blue tone"
                 className="w-full h-full object-cover grayscale opacity-50 contrast-125"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm0l7mGXp7mnXUu06Bgg4FTCGjDdrDT89AJlsCygnmDbpanIHg2oWj2USKXpqYkyg7zSFNDXF5JyMV-pMP7AOsXAUdOvmXt42VNlryaOOM6iCb5C7jx4aJLOMI-r17SBORsd1i3XLarKE6JcBZnHFJqzVBoQLyWtDklOB6wP-S1OTKgiwE6baD9hLQYuEV3_Wz4ZPSkwtRVQJ-z-L1oQZ9oxY-ju70jIRtCVFGmJPGPTyaWaZVuiwDpl5yj9AsDcIl1j9Le4p-R8o"
+                src="/img/scene-7.jpg"
               />
               <div className="absolute top-1/4 left-1/3 w-20 h-20 bg-error rounded-full heat-point"></div>
               <div className="absolute top-1/2 right-1/4 w-12 h-12 bg-secondary rounded-full heat-point"></div>

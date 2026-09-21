@@ -1,0 +1,266 @@
+/* Live drone map. Dark-first, to sit inside the existing SeaYou surfaces. */
+
+.drone-map-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #050b14; /* what shows through when tiles never load */
+}
+
+.drone-map-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Leaflet paints its own light background and bright controls - neither
+   belongs in a dark ops view. */
+.drone-map-canvas.leaflet-container {
+  background: #050b14;
+  font-family: inherit;
+}
+
+/* OSM only publishes a light basemap, and a white map inside a dark ops
+   view is both ugly and blinding at night. Inverting and rotating the hue
+   by half a turn turns it into a dark one while leaving real colours
+   roughly where they were - the standard trick, and it needs no second
+   tile provider or API key. Knocked back as well so the orange track
+   stays the brightest thing on screen: the map is context, the flight is
+   the subject. */
+.drone-map-canvas .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)
+    saturate(0.75);
+}
+
+.drone-map-canvas .leaflet-control-zoom a {
+  background: rgba(10, 18, 30, 0.9);
+  color: #e6edf6;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.drone-map-canvas .leaflet-control-zoom a:hover {
+  background: rgba(255, 107, 53, 0.25);
+}
+
+.drone-map-canvas .leaflet-control-attribution {
+  background: rgba(5, 11, 20, 0.7);
+  color: #7c8ba0;
+  font-size: 9px;
+}
+
+.drone-map-canvas .leaflet-control-attribution a {
+  color: #9fb2cc;
+}
+
+/* -- the drone itself ------------------------------------------------- */
+
+.drone-marker-inner {
+  transition: transform 0.2s linear;
+  transform-origin: 50% 50%;
+}
+
+.drone-marker-body {
+  fill: #ff6b35;
+  stroke: #ffffff;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.drone-marker-halo {
+  fill: rgba(255, 107, 53, 0.18);
+  stroke: rgba(255, 107, 53, 0.55);
+  stroke-width: 1;
+  animation: dm-pulse 2s ease-out infinite;
+}
+
+/* A frozen marker and a hovering drone look identical, so a stale fix has
+   to announce itself on the marker, not only in the status strip. */
+.drone-marker-inner.is-stale .drone-marker-body {
+  fill: #6b7787;
+  stroke: #aab4c2;
+}
+
+.drone-marker-inner.is-stale .drone-marker-halo {
+  animation: none;
+  fill: rgba(107, 119, 135, 0.15);
+  stroke: rgba(107, 119, 135, 0.5);
+}
+
+@keyframes dm-pulse {
+  0% { opacity: 0.9; }
+  50% { opacity: 0.35; }
+  100% { opacity: 0.9; }
+}
+
+.home-marker-inner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #e9c400;
+  background: rgba(233, 196, 0, 0.25);
+  box-shadow: 0 0 10px rgba(233, 196, 0, 0.6);
+}
+
+/* -- status strip ------------------------------------------------------ */
+
+.drone-map-status {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 500; /* above Leaflet panes, below its popups */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(5, 11, 20, 0.82);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #e6edf6;
+  pointer-events: none;
+}
+
+.dm-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dm-dot-ok { background: #35d07f; box-shadow: 0 0 8px rgba(53, 208, 127, 0.8); }
+.dm-dot-wait { background: #e9c400; box-shadow: 0 0 8px rgba(233, 196, 0, 0.8); }
+.dm-dot-stale { background: #ff6b35; box-shadow: 0 0 8px rgba(255, 107, 53, 0.8); }
+.dm-dot-off { background: #6b7787; }
+
+.dm-state {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dm-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dm-field {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-field em {
+  font-style: normal;
+  color: #7c8ba0;
+  margin-right: 5px;
+  font-size: 9px;
+}
+
+/* -- buttons ----------------------------------------------------------- */
+
+.drone-map-buttons {
+  /* Bottom LEFT, not right: the Asset Map page floats its own panels over
+     this component, and the map sits in a z-0 stacking context underneath
+     them. The bottom-left corner is the one area those floats leave clear. */
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 500;
+  display: flex;
+  gap: 8px;
+}
+
+.dm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(5, 11, 20, 0.85);
+  backdrop-filter: blur(10px);
+  color: #cfd9e6;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dm-btn .material-symbols-outlined { font-size: 16px; }
+
+.dm-btn:hover:not(:disabled) {
+  border-color: rgba(255, 107, 53, 0.5);
+  color: #fff;
+}
+
+.dm-btn.is-on {
+  border-color: rgba(255, 107, 53, 0.7);
+  background: rgba(255, 107, 53, 0.18);
+  color: #ffb999;
+}
+
+.dm-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* -- waiting / offline ------------------------------------------------- */
+
+.drone-map-waiting {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 500;
+  width: min(340px, calc(100% - 32px));
+  padding: 22px;
+  text-align: center;
+  border-radius: 14px;
+  background: rgba(5, 11, 20, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(233, 196, 0, 0.25);
+}
+
+.dm-wait-icon {
+  font-size: 34px;
+  color: #e9c400;
+}
+
+.dm-wait-title {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e6edf6;
+}
+
+.dm-wait-body {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #9fb2cc;
+}
+
+.drone-map-offline {
+  position: absolute;
+  left: 12px;
+  top: 58px;
+  z-index: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(5, 11, 20, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #7c8ba0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  .drone-map-status { gap: 8px; font-size: 10px; padding: 8px 10px; }
+  .drone-map-buttons { flex-wrap: wrap; justify-content: flex-end; }
+}

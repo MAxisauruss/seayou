@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./LiveFeeds.css";
 import { Page } from "../types";
+import FlightControl from "../components/FlightControl";
+import MissionControl from "../components/MissionControl";
 import {
   hasRelay,
   droneVideoStreamUrl,
@@ -77,6 +79,12 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
   const stale = live && packetAgeSeconds !== null && packetAgeSeconds > 3;
   const activeCamera = cameras.find((camera) => camera.id === selectedCamera) ?? cameras[0];
   const gridCameras = cameras.filter((camera) => camera.id !== selectedCamera);
+
+  // Give the stream another chance whenever the link comes back, rather
+  // than staying stuck on the fallback until someone reloads the page.
+  useEffect(() => {
+    if (live) setVideoFailed(false);
+  }, [live]);
 
   return (
     <div className="live-feeds-page h-screen flex flex-col">
@@ -206,7 +214,19 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
         {/* Surveillance Canvas */}
         <main className="flex-1 flex flex-col overflow-hidden bg-background md:ml-64">
           {/* Surveillance Split View */}
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/10 overflow-hidden">
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[20rem_1fr] xl:grid-cols-[20rem_1fr_1fr] gap-px bg-white/10 overflow-hidden">
+            {/* Control column - the only part of this page that can fly the
+                aircraft. Kept off the video itself so nothing of ours sits
+                on top of the feed. */}
+            <div className="bg-surface-container overflow-y-auto p-3 flex flex-col gap-3 order-first">
+              {/* STICKY. This block carries STOP, and an emergency stop that
+                  can scroll off the screen is not an emergency stop. */}
+              <div className="sticky top-0 z-10 -mx-3 -mt-3 px-3 pt-3 pb-1 bg-surface-container">
+                <FlightControl />
+              </div>
+              <MissionControl />
+            </div>
+
             {/* Left Panel: 4K Drone Feed */}
             <div className="relative bg-black overflow-hidden group">
               {activeCamera.id === "drone" && hasRelay ? (

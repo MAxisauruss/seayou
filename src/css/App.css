@@ -1,4 +1,9 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap");
+/* The Google Fonts @import that used to be here is gone: the same fonts
+   are now self-hosted and loaded from public/fonts/fonts.css by
+   index.html, so the dashboard works with no internet. Re-adding an
+   @import here would quietly put the network dependency back even though
+   index.html looks clean - which is exactly how it survived the first
+   pass. */
 
 @tailwind base;
 @tailwind components;

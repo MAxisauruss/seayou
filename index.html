@@ -4,10 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SeaYou - Ocean Rescue Command</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-      rel="stylesheet"
-    />
+    <!--
+      Self-hosted fonts, served from the Pi alongside the app.
+
+      These used to come from fonts.googleapis.com. Material Symbols is a
+      FONT, not an image set, so with no internet every icon in the UI
+      rendered as its own name in plain text - "videocam", "warning",
+      "person" - which looks completely broken. The drone is often demoed
+      on an isolated network or a hotspot with no data, so the whole
+      dashboard is now offline-capable.
+
+      Regenerate with scratchpad/localise_fonts.py if a new icon is added:
+      Material Symbols is subsetted to only the icons this app uses.
+    -->
+    <link href="/fonts/fonts.css" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

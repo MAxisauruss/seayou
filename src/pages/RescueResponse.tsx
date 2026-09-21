@@ -171,7 +171,7 @@ export default function RescueResponse({ onNavigate, activePage }: RescueRespons
                 alt="A dark, high-contrast tactical maritime map with coastlines, depth contours, and a digital grid overlay"
                 className="w-full h-full object-cover opacity-40 mix-blend-luminosity"
                 data-location="North Sea Rescue Zone"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcGSTHYN0pwR9jx4mXVFVCiQz9B7gcFRenRqYQCY9u9RcVtaItrYQCqHxwGGws-KxA7LiM3mwWFoD_3TlFbgHVBlFmMDbTlXGAQE7dvxOOzECTUXNkJ7YWt8OU1AXYRYAVEhrL8lg75J6MHqgH5SzFCLXtrYpfymDiwHskouLnMtLBJK9L-9xReCxDPQK1v0ZLMMZGsZoW_byCXQud-MrRhicQloKXrwDDBb2cm335qB376jbxzbmPaL3xm2F2Pg-bdjc8YPTYwxg"
+                src="/img/scene-1.jpg"
               />
             </div>
             {/* Tactical Overlays */}
@@ -235,7 +235,7 @@ export default function RescueResponse({ onNavigate, activePage }: RescueRespons
                 <img
                   className="w-full h-full object-cover"
                   alt="A thermal camera view from a rescue drone flying over dark ocean waves, highlighting a person in the water"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBaA-V4E1ZmlVk85zC-axO-lqXvXP-FN8SuoItoTh4AGGFddvg-GG-nBJgbRkDywjb45gBwiuN6aFNjlhQipe5OCoLJ7icKqv5xsCsGDM0ssKOcizY5wdY-wN4FQjq6wS6clqJltc1aW1OelpcPy2lW_YL5G_fpazFcnJukS-L6AIzvMjnrp4j1uIMnEfpNtSM7nRNxMIWmc5LvvPhQ7nJnNoeE3hm3gTV9Kl9bwYyMEqzmNintqbFRTmTCanaSEbitRazaPpZCio8"
+                  src="/img/scene-3.jpg"
                 />
                 <div className="absolute top-2 left-2 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-error animate-pulse"></span>
