@@ -530,6 +530,19 @@ async def run(args):
     if args.token:
         url += ("&" if "?" in url else "?") + "token=" + args.token
 
+    frames = []
+    if args.video:
+        import glob
+        import os
+        paths = (sorted(p for p in glob.glob(os.path.join(args.video, "*"))
+                        if p.lower().endswith((".jpg", ".jpeg")))
+                 if os.path.isdir(args.video) else [args.video])
+        for path in paths:
+            with open(path, "rb") as f:
+                frames.append(f.read())
+        print(f"Video: {len(frames)} JPEG frame(s) from {args.video}, "
+              f"{args.video_fps:g} fps")
+
     backoff = 1.0
     while True:
         try:
@@ -556,6 +569,20 @@ async def run(args):
                                     "type": "mission_ack",
                                     "data": sim.handle_mission(p.get("data") or {})}))
 
+                    async def video():
+                        # Camera frames, exactly as drone_agent.py sends them:
+                        # raw JPEG bytes as binary websocket messages. Stills
+                        # from a folder, cycled - enough to drive the ground
+                        # station's /stream.mjpg and everything downstream of
+                        # it (the ML view) without the aircraft's camera.
+                        if not frames:
+                            return
+                        i = 0
+                        while True:
+                            await ws.send_bytes(frames[i % len(frames)])
+                            i += 1
+                            await asyncio.sleep(1.0 / max(0.2, args.video_fps))
+
                     async def tx():
                         # Telemetry only. The physics are NOT stepped here -
                         # see flight_loop(). Stepping inside the sender meant
@@ -567,7 +594,7 @@ async def run(args):
                                 {"type": "telemetry", "data": sim.telemetry()}))
                             await asyncio.sleep(1.0 / 30)
 
-                    await asyncio.gather(rx(), tx())
+                    await asyncio.gather(rx(), tx(), video())
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -583,6 +610,12 @@ def main():
     ap.add_argument("--no-gps", action="store_true",
                     help="simulate the real aircraft's dead GPS (0 satellites)")
     ap.add_argument("--sats", type=int, default=11)
+    ap.add_argument("--video", default=None,
+                    help="a JPEG, or a folder of JPEGs, to send up as the camera "
+                         "feed - the way to demo the video and ML view with no "
+                         "camera on the aircraft")
+    ap.add_argument("--video-fps", type=float, default=2.0,
+                    help="frames per second to send with --video (default 2)")
     ap.add_argument("--wind", type=float, default=0.0,
                     help="steady wind speed, m/s. Something for position "
                          "hold to fight; 0 (the default) is flat calm.")

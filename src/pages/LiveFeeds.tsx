@@ -3,6 +3,7 @@ import "./LiveFeeds.css";
 import { Page } from "../types";
 import FlightControl from "../components/FlightControl";
 import MissionControl from "../components/MissionControl";
+import MlView from "../components/MlView";
 import {
   hasRelay,
   droneVideoStreamUrl,
@@ -17,7 +18,7 @@ interface LiveFeedsProps {
   activePage: Page;
 }
 
-type CameraId = "drone" | "zone-01" | "zone-02" | "zone-03" | "zone-04";
+type CameraId = "drone" | "ml" | "zone-01" | "zone-02" | "zone-03" | "zone-04";
 
 const cameras: Array<{
   id: CameraId;
@@ -31,6 +32,14 @@ const cameras: Array<{
     label: "DRONE-04 // AERIAL",
     alt: "A high-altitude aerial view of a turquoise ocean meeting a white sandy coastline",
     src: "https://lh3.googleusercontent.com/aida-public/AB6AXuAq7wPmlIeKjkHsZHTMfNMWxDHQTYOB6jVEoXdv09T8rBFPyxtchas3gNTHFIs8ZHMN3571dYaSsCdoTW2gVO9cYJN2NH2J3O7nMK53gRncCnpE8mY9wCJcUvAiEwA4IEWsd6yVORc-lkG-aEXMBhkv_qB-o4NNJvwa4FLQQO1hwd1swA9NV4NWQxfGIE0Ns0CJjvRZP7UkZmWft1s5H6JO5ELzkfkx2oQfOe_xCr0aQ8Mv5UbfgXscOOv7eEI8jSqTuZkzKRNzThw",
+  },
+  // The drone's camera as the detection model sees it - drawn by
+  // groundstation/ml_view.py, shown by MlView. Second in the list so its
+  // tile is the first one in the grid.
+  {
+    id: "ml",
+    label: "ML VIEW // DETECTION",
+    alt: "The drone camera with the detection model's boxes drawn on it",
   },
   {
     id: "zone-01",
@@ -229,7 +238,9 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
 
             {/* Left Panel: 4K Drone Feed */}
             <div className="relative bg-black overflow-hidden group">
-              {activeCamera.id === "drone" && hasRelay ? (
+              {activeCamera.id === "ml" ? (
+                <MlView variant="main" />
+              ) : activeCamera.id === "drone" && hasRelay ? (
                 /* The drone's own camera, re-served by the ground station as
                    multipart/x-mixed-replace. An <img> is the whole client -
                    the browser holds the connection open and repaints every
@@ -268,12 +279,14 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                   <span className="font-label-caps text-label-caps text-on-surface-variant">SIGNAL LOST // ZONE 04</span>
                 </div>
               )}
-              {activeCamera.id !== "drone" && (
+              {activeCamera.id !== "drone" && activeCamera.id !== "ml" && (
                 <div className="absolute top-6 left-6 bg-black/60 px-3 py-1 rounded text-xs font-telemetry-sm text-white">
                   {activeCamera.label}
                 </div>
               )}
-              {/* Drone Telemetry Overlay */}
+              {/* Drone Telemetry Overlay - hidden on the ML view, where it
+                  would sit on top of the very boxes being shown. */}
+              {activeCamera.id !== "ml" && (
               <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
                 <div className="flex justify-between items-start">
                   <div className="glass-panel p-4 rounded-lg flex flex-col gap-2">
@@ -458,6 +471,7 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                   </div>
                 </div>
               </div>
+              )}
             </div>
 
             {/* Right Panel: CCTV Grid */}
@@ -480,7 +494,9 @@ export default function LiveFeeds({ onNavigate, activePage }: LiveFeedsProps) {
                     className="relative bg-black group overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary"
                     onClick={() => setSelectedCamera(camera.id)}
                   >
-                    {camera.src ? (
+                    {camera.id === "ml" ? (
+                      <MlView variant="tile" />
+                    ) : camera.src ? (
                       <img
                         alt={camera.alt}
                         className="w-full h-full object-cover opacity-60 grayscale group-hover:grayscale-0 transition-all duration-500"

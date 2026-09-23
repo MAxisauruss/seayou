@@ -45,3 +45,7 @@ __pycache__/
 # Flight logs - written per flight, sometimes hundreds of megabytes.
 flight_*.csv
 *.bak-*
+
+# The ML view's own environment (PyTorch etc, ~1.2 GB). Rebuild it from
+# groundstation/requirements-ml.txt - never commit it.
+groundstation/.venv-ml/

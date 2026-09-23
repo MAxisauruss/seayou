@@ -1,0 +1,10 @@
+# The ML view (ml_view.py) only - NOT the ground station, which needs none
+# of this and ships as a small .exe. Install into its own environment:
+#
+#   python -m venv .venv-ml
+#   .venv-ml\Scripts\python.exe -m pip install -r requirements-ml.txt
+#
+# Tested 2026-09-23 on Windows, Python 3.14: ultralytics 8.4.160,
+# torch 2.14.0 (CPU), opencv 5.0.0. About 350 MB to download.
+ultralytics>=8.4
+opencv-python-headless>=4.8

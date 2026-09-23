@@ -8,6 +8,7 @@ everything that serves the dashboard, now lives alongside it.
 | `src/`, `public/`, `index.html` | The React dashboard. Built with `npm run build`. |
 | `drone/` | What runs on the drone's Raspberry Pi 5: the Pico bridge and web server (`server.py`), the outbound agent (`drone_agent.py`), GPS (`gps.py`), battery monitoring and the low-pack failsafe, autonomous flight (`mission.py`), and the original pilot dashboard in `drone/static/`. |
 | `groundstation/` | The laptop-side ground station the drone dials into: `server.py`, the one-click `launcher.py`, `auth.py`, and `sim_drone.py` - a simulator that flies a full waypoint run with no aircraft present. |
+| `groundstation/ml_view.py` | The ML view: the drone camera with the detection model's boxes drawn on it, shown as the ML VIEW camera on Live Feeds. Runs in its own environment (`requirements-ml.txt`); double-click `start_ml_view.bat`. |
 | `firmware/` | The Pico flight controller, in C++: `fc_quad_gt_cc/` is the flight code, plus the compass-calibration, GPS-sniffer and motor-test utilities. The `.uf2` files are the flashable builds. |
 | `docs/` | The handover document, the level-calibration guide and the V4 wiring diagram. |
 
