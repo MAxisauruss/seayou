@@ -143,8 +143,65 @@ ALT_I_MIN_HEIGHT_M = 0.9
 #: mission.
 MAX_AUTO_THROTTLE = 85.0
 
-#: Abort if GPS position goes stale for this long, seconds.
+#: A fix older than this is not a fix, seconds.
 GPS_TIMEOUT_S = 2.0
+
+# --- position hold ---------------------------------------------------------
+#
+# The aircraft holds its POSITION whenever it has satellites good enough to
+# believe, and falls back to holding only its HEIGHT when it does not. It
+# never cuts the motors because the GPS went away.
+#
+# That last point is the one that matters. Losing satellites used to abort
+# with throttle 0 after two seconds - and for those two seconds step()
+# returned None, which hands control to whatever the pilot link is sending:
+# SAFE_CONTROL, throttle 0, if nobody is flying. A GPS dropout at height is
+# a reason to stop trusting position, not a reason to stop flying. The
+# barometer still works, and the aircraft can hold a level hover on it
+# exactly as it does after every takeoff.
+
+#: Satellites needed before a position is trusted enough to hold. Four is
+#: the least that gives a 3D fix at all - measured on this airframe's
+#: u-blox 7, outdoors: 4 used, HDOP 2.1, ~4 m of wander sitting still.
+HOLD_MIN_SATS = 4
+
+#: Horizontal dilution of precision above which the fix is too poor to hold
+#: against: past about 3 the position wanders further than the correction
+#: it would drive, and the aircraft chases noise.
+HOLD_MAX_HDOP = 3.0
+
+#: With no usable fix for this long while it should be holding position,
+#: come down under control rather than hovering blind while the wind takes
+#: it. Long enough to ride out a dropout under a bridge or beside a
+#: building; short enough that it cannot drift far.
+BLIND_HOVER_LAND_S = 20.0
+
+#: Below this height the aircraft is kept LEVEL even when it has a fix.
+#: Leaning to correct position with a leg or prop tip still near the
+#: ground is how a quad catches an edge and flips on takeoff or touchdown.
+#: 0.8 m is the barometer's first step (it resolves ~0.83 m), so the hold
+#: engages at the first reading that proves the aircraft is clear - a 1.0 m
+#: gate waited a whole extra step, ~2 s of drifting in a slow climb.
+HOLD_MIN_HEIGHT_M = 0.8
+
+#: A landing never TRAVELS. If the position it is holding is further away
+#: than this - it drifted while blind, or the fix jumped - it re-anchors
+#: to where it is now and comes straight down, instead of flying sideways
+#: while it descends.
+LAND_HOLD_RECAPTURE_M = 5.0
+
+#: The hold leans harder the further it is pushed off its spot, and hits
+#: MAX_TILT_DEG at MAX_SPEED_MS / 0.5 = 6 m out. Past that it has nothing
+#: left: if it is STILL losing ground there, the wind is stronger than the
+#: aircraft is allowed to fight. Measured in the simulator: a 4 m/s wind
+#: carried it away at ~1 m/s while the status went on saying "holding".
+OVERPOWER_DIST_M = MAX_SPEED_MS / 0.5
+
+#: How fast it must still be losing ground at full lean, over the last
+#: OVERPOWER_WINDOW_S, before that is called being overpowered rather than
+#: a gust it will recover from.
+OVERPOWER_RATE_MS = 0.2
+OVERPOWER_WINDOW_S = 6.0
 
 #: Abort a mission that has run this long without arriving, seconds.
 MISSION_TIMEOUT_S = 120.0
@@ -247,6 +304,15 @@ class Mission:
         self.target_alt = 0.0
         self.started_at = 0.0
         self.last_fix_at = 0.0
+        # Position hold. `position_hold` is what the aircraft is ACTUALLY
+        # doing right now - "gps", "height_only" or None - so the dashboard
+        # can say "drifting" instead of implying a hold that is not
+        # happening. `_blind_since` is when a usable fix was last lost.
+        self.position_hold = None
+        self._blind_since = None
+        self._hold_note = ""
+        # (time, distance) while station-keeping, to spot the wind winning.
+        self._hold_track = []
         self.distance_m = None
         self.bearing_deg = None
         self.interrupted = False
@@ -288,6 +354,8 @@ class Mission:
 
         self.target = (lat, lon)
         self.target_alt = float(alt)
+        self._blind_since = None
+        self._hold_track = []
         self.state = "running"
         self.reason = ""
         self.started_at = time.monotonic()
@@ -421,6 +489,15 @@ class Mission:
         self.bearing_deg = None
         self.interrupted = False
         self._land_cut_at = None
+        self.position_hold = None
+        self._blind_since = None
+        self._hold_note = ""
+        self._hold_track = []
+        # Anchor on the spot it is leaving from, when the sky allows. The
+        # climb then holds over it, and so does the hover at the top.
+        gps_now = (telemetry or {}).get("gps") or {}
+        if self._usable_fix(gps_now)[0]:
+            self.target = (gps_now["lat"], gps_now["lon"])
         self.state = "takeoff"
         self.reason = "climbing to %.1f m" % alt
         self.started_at = time.monotonic()
@@ -479,6 +556,12 @@ class Mission:
             "distance_m": round(self.distance_m, 1) if self.distance_m is not None else None,
             "bearing_deg": round(self.bearing_deg, 0) if self.bearing_deg is not None else None,
             "elapsed_s": round(time.monotonic() - self.started_at, 1) if self.started_at else 0,
+            # What is actually holding the aircraft still: "gps" (position
+            # AND height), "height_only" (it will drift), or None (not
+            # hovering). Shown so nobody mistakes a drift for a hold.
+            "position_hold": self.position_hold,
+            "gps_lost_s": (round(time.monotonic() - self._blind_since, 1)
+                           if self._blind_since is not None else None),
             # What the hover trim has learned, and the hover throttle it
             # implies. Worth showing: after one steady hover this is a
             # MEASUREMENT of the aircraft's hover throttle, which is the
@@ -496,6 +579,129 @@ class Mission:
         }
 
     # --- the guidance loop -----------------------------------------
+    @staticmethod
+    def _usable_fix(gps):
+        """(usable, why_not) - is this fix good enough to hold against?
+
+        HDOP is only checked when the telemetry carries it. The Pi's USB
+        GNSS reader does; the Pico's old GPS block did not, and a missing
+        number is not evidence of a bad fix.
+        """
+        if (not gps.get("has_fix") or gps.get("lat") is None
+                or gps.get("lon") is None):
+            return False, "no GPS fix"
+        sats = gps.get("sat_count") or 0
+        if sats < HOLD_MIN_SATS:
+            return False, "only %d satellite%s" % (sats, "" if sats == 1 else "s")
+        hdop = gps.get("hdop")
+        if isinstance(hdop, (int, float)) and hdop > HOLD_MAX_HDOP:
+            return False, "fix too poor (HDOP %.1f)" % hdop
+        return True, ""
+
+    def _blind_hover(self, telemetry, base_control, why):
+        """No usable position: hold HEIGHT, level, and wait for it back.
+
+        Keeps the target, so the moment the fix returns the hold resumes
+        where it was. After BLIND_HOVER_LAND_S it lands under control
+        instead of hovering blind while the wind carries it off.
+        """
+        now = time.monotonic()
+        if self._blind_since is None:
+            self._blind_since = now
+            log.warning("Position hold suspended - %s. Holding height only.", why)
+        self.position_hold = "height_only"
+        blind_s = now - self._blind_since
+        baro = (telemetry or {}).get("baro") or {}
+        alt = baro.get("height_m")
+
+        if blind_s > BLIND_HOVER_LAND_S:
+            ok, message = self.land(telemetry)
+            if ok:
+                self.reason = ("no usable GPS for %.0f s (%s) - landing where "
+                               "it is" % (blind_s, why))
+                log.warning("GPS gone for %.0f s - landing.", blind_s)
+                return self._vertical_step(alt, base_control)
+            log.error("GPS gone and cannot land (%s) - holding height.", message)
+
+        self.reason = ("%s - holding height only, DRIFTING. Lands if it is "
+                       "not back within %.0f s"
+                       % (why, max(0.0, BLIND_HOVER_LAND_S - blind_s)))
+        if alt is None:
+            return self._abort_control("lost the barometer and the GPS")
+        return self._alt_control(self.target_alt, alt, base_control, trim=True)
+
+    @staticmethod
+    def _steer(north, east, yaw_deg):
+        """Tilt that moves the aircraft towards a north/east offset.
+
+        Returns (roll_deg, pitch_deg). The ONE place position is turned into
+        attitude, used by travelling, holding, takeoff and landing alike -
+        two copies of a control law are two things to keep in step, and
+        the day they drift apart the aircraft flies differently depending
+        on which phase it is in.
+
+        Proportional on distance, capped to MAX_SPEED_MS, then turned into
+        a tilt. Capping speed before tilt means the aircraft eases off as it
+        approaches instead of braking hard.
+        """
+        dist = math.hypot(north, east)
+        speed = max(-MAX_SPEED_MS, min(MAX_SPEED_MS, dist * 0.5))
+        if dist > 1e-6:
+            want_n = speed * (north / dist)
+            want_e = speed * (east / dist)
+        else:
+            want_n = want_e = 0.0
+        yaw = math.radians(yaw_deg)
+        fwd = want_n * math.cos(yaw) + want_e * math.sin(yaw)
+        rgt = -want_n * math.sin(yaw) + want_e * math.cos(yaw)
+        tilt_per_ms = MAX_TILT_DEG / MAX_SPEED_MS
+        pitch_deg = max(-MAX_TILT_DEG, min(MAX_TILT_DEG, fwd * tilt_per_ms))
+        roll_deg = max(-MAX_TILT_DEG, min(MAX_TILT_DEG, rgt * tilt_per_ms))
+        return roll_deg, pitch_deg
+
+    def _hold_during_vertical(self, ctrl, gps, att, alt):
+        """Keep the aircraft over one spot while it climbs or descends.
+
+        Takeoff and landing only ever controlled HEIGHT, so in wind the
+        aircraft went where the air took it: measured in the simulator, a
+        2 m/s breeze carried it 22 m sideways during a 12 s climb, before
+        the hover's position hold had even started. The same drift on the
+        way down would put a battery return 15-20 m off the home it had
+        just flown back to.
+
+        Laid over the vertical controller's output: height stays exactly
+        as it was, and roll and pitch are added only when there is a fix
+        worth trusting and the aircraft is high enough to lean safely.
+        """
+        if ctrl is None or self.state not in ("takeoff", "landing"):
+            return ctrl
+        if ctrl.get("throttle", 0) <= 0:
+            return ctrl  # idle or touched down - never lean on the ground
+        if alt is None or alt < HOLD_MIN_HEIGHT_M:
+            self.position_hold = None
+            return ctrl
+        usable, _why = self._usable_fix(gps)
+        if not usable:
+            self.position_hold = "height_only"
+            return ctrl
+
+        if self.target is None:
+            self.target = (gps["lat"], gps["lon"])
+            log.info("Holding position during %s at %.6f, %.6f",
+                     self.state, gps["lat"], gps["lon"])
+        north, east = haversine_ne(gps["lat"], gps["lon"],
+                                   self.target[0], self.target[1])
+        if self.state == "landing" and math.hypot(north, east) > LAND_HOLD_RECAPTURE_M:
+            self.target = (gps["lat"], gps["lon"])
+            north = east = 0.0
+
+        roll_deg, pitch_deg = self._steer(north, east, att.get("yaw", 0.0))
+        out = dict(ctrl)
+        out["roll"] = _to_byte(roll_deg)
+        out["pitch"] = _to_byte(pitch_deg)
+        self.position_hold = "gps"
+        return out
+
     def step(self, telemetry, base_control):
         """Return the control dict to send, or None to leave control alone.
 
@@ -524,9 +730,34 @@ class Mission:
         # Without that second condition a completed takeoff fell through
         # to the waypoint path, found no fix and aborted itself - at
         # height, with the motors idled, seconds after appearing to work.
-        if (self.state in ("takeoff", "landing")
-                or (self.state == "holding" and self.target is None)):
-            return self._vertical_step(baro.get("height_m"), base_control)
+        if self.state in ("takeoff", "landing"):
+            alt = baro.get("height_m")
+            ctrl = self._vertical_step(alt, base_control)
+            return self._hold_during_vertical(ctrl, gps, att, alt)
+
+        # A finished takeoff is a hover with no position yet. If the sky is
+        # good enough, lock where it is and station-keep from here on;
+        # otherwise hold height only, and keep checking - satellites often
+        # arrive a few seconds after the props are already turning.
+        if self.state == "holding" and self.target is None:
+            usable, why = self._usable_fix(gps)
+            if not usable:
+                self.position_hold = "height_only"
+                note = "%s - holding height only, will drift" % why
+                if note != self._hold_note:
+                    self._hold_note = note
+                    self.reason = note
+                return self._vertical_step(baro.get("height_m"), base_control)
+            self.target = (gps["lat"], gps["lon"])
+            self.last_fix_at = time.monotonic()
+            self._blind_since = None
+            self._hold_note = ""
+            self.reason = ("holding position on GPS (%d satellites)"
+                           % (gps.get("sat_count") or 0))
+            log.info("Position hold engaged at %.6f, %.6f (%d sats)",
+                     gps["lat"], gps["lon"], gps.get("sat_count") or 0)
+            # ...and fall through into the guidance below, which is what
+            # station-keeps against drift.
 
         # Abort conditions, checked before anything is commanded.
         #
@@ -560,14 +791,29 @@ class Mission:
                 self.reason = ("timed out before arriving - holding position, "
                                "take over when ready")
             else:
-                # No position to hold against. There is nothing to
-                # station-keep on, so the old behaviour is still correct.
-                return self._abort_control("timed out before arriving, no fix")
-        if not gps.get("has_fix") or gps.get("lat") is None:
-            if time.monotonic() - self.last_fix_at > GPS_TIMEOUT_S:
-                return self._abort_control("lost GPS fix")
-            return None
+                # No position to hold against. This used to abort with
+                # throttle 0 - the same motor cut as a lost fix, reached by
+                # a different road. Hold height instead; the blind-hover
+                # limit lands it if the sky does not come back.
+                return self._blind_hover(telemetry, base_control,
+                                         "timed out before arriving, no GPS fix")
+        usable, why = self._usable_fix(gps)
+        if not usable:
+            # This used to be `return None` for two seconds and then an
+            # abort with throttle 0 - a motor cut at height, triggered by
+            # nothing more than the sky. Now: hold height, keep the
+            # target, and resume the moment the fix is back.
+            return self._blind_hover(telemetry, base_control, why)
+        if self._blind_since is not None:
+            log.info("GPS back after %.1f s - position hold resumed.",
+                     time.monotonic() - self._blind_since)
+            self._blind_since = None
+            if self.state == "holding":
+                self.reason = ("holding position on GPS (%d satellites)"
+                               % (gps.get("sat_count") or 0))
         self.last_fix_at = time.monotonic()
+        if self.position_hold != "overpowered":
+            self.position_hold = "gps"
 
         north, east = haversine_ne(gps["lat"], gps["lon"], self.target[0], self.target[1])
         dist = math.hypot(north, east)
@@ -576,6 +822,15 @@ class Mission:
 
         if dist > MAX_RANGE_M * 1.5:
             # Either the drone or the target is not where we think it is.
+            # That is a reason to stop steering by GPS - and a reason to
+            # get down - but not a reason to cut the motors at height,
+            # which is what this used to do.
+            ok, message = self.land(telemetry)
+            if ok:
+                self.reason = ("position implausible (%.0f m from target) - "
+                               "landing where it is" % dist)
+                log.error("Position implausible (%.0f m off) - landing.", dist)
+                return self._vertical_step(baro.get("height_m"), base_control)
             return self._abort_control("drifted outside the allowed range")
 
         alt = baro.get("height_m")
@@ -596,23 +851,36 @@ class Mission:
         # While holding, the same guidance runs - it just has a target it is
         # already at, so it station-keeps against drift instead of
         # travelling. Altitude hold continues either way.
-        # Horizontal: proportional on distance, capped to MAX_SPEED_MS,
-        # then turned into a tilt. Capping speed before tilt means the
-        # aircraft eases off as it approaches instead of braking hard.
-        speed = max(-MAX_SPEED_MS, min(MAX_SPEED_MS, dist * 0.5))
-        if dist > 1e-6:
-            want_n = speed * (north / dist)
-            want_e = speed * (east / dist)
+        roll_deg, pitch_deg = self._steer(north, east, att.get("yaw", 0.0))
+
+        # Is the wind winning? Only a HOLD can be overpowered - a transit
+        # is meant to be moving. Reported, not acted on: the aircraft keeps
+        # flying and keeps leaning into it. Whether to land where it is
+        # (which over the sea means in the sea) or fly it out by hand is a
+        # decision for the pilot, not for this loop.
+        if self.state == "holding":
+            now = time.monotonic()
+            self._hold_track.append((now, dist))
+            self._hold_track = [(t, d) for (t, d) in self._hold_track
+                                if now - t <= OVERPOWER_WINDOW_S]
+            t0, d0 = self._hold_track[0]
+            span = now - t0
+            rate = (dist - d0) / span if span >= OVERPOWER_WINDOW_S * 0.8 else 0.0
+            if dist >= OVERPOWER_DIST_M and rate >= OVERPOWER_RATE_MS:
+                if self.position_hold != "overpowered":
+                    log.error("WIND TOO STRONG: %.0f m off the hold point and "
+                              "losing %.1f m/s at full lean.", dist, rate)
+                self.position_hold = "overpowered"
+                self.reason = ("WIND TOO STRONG TO HOLD - leaning at the %.0f deg "
+                               "limit and still being pushed away at %.1f m/s "
+                               "(%.0f m off). Take over."
+                               % (MAX_TILT_DEG, rate, dist))
+            elif self.position_hold == "overpowered" and rate < OVERPOWER_RATE_MS / 2:
+                self.position_hold = "gps"
+                self.reason = ("holding position on GPS again (%.0f m off the "
+                               "hold point)" % dist)
         else:
-            want_n = want_e = 0.0
-
-        yaw = math.radians(att.get("yaw", 0.0))
-        fwd = want_n * math.cos(yaw) + want_e * math.sin(yaw)
-        rgt = -want_n * math.sin(yaw) + want_e * math.cos(yaw)
-
-        tilt_per_ms = MAX_TILT_DEG / MAX_SPEED_MS
-        pitch_deg = max(-MAX_TILT_DEG, min(MAX_TILT_DEG, fwd * tilt_per_ms))
-        roll_deg = max(-MAX_TILT_DEG, min(MAX_TILT_DEG, rgt * tilt_per_ms))
+            self._hold_track = []
 
         # Vertical: the same height hold takeoff and landing use, so the
         # hover trim learned by one is used by all of them. The waypoint's
@@ -672,7 +940,10 @@ class Mission:
                 return self._alt_control(alt, alt, base_control)
             if alt >= self.target_alt - ALT_ARRIVE_M:
                 self.state = "holding"
-                self.reason = "at %.1f m - holding, take over when ready" % alt
+                self.reason = (
+                    ("at %.1f m - holding position on GPS, take over when "
+                     "ready" % alt) if self.target is not None else
+                    ("at %.1f m - holding, take over when ready" % alt))
                 return self._alt_control(self.target_alt, alt, base_control,
                                          trim=True)
             # Ramp the SETPOINT rather than aiming at the final height from

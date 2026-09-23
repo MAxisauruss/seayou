@@ -123,6 +123,10 @@ class SimDrone:
         self._guard_returning = False
         #: Minutes of hovering the simulated pack lasts, full to empty.
         self.pack_minutes = 12.0
+        #: Steady wind, as the velocity it gives the air mass (m/s, north
+        #: and east). Zero unless --wind is given.
+        self.wind_n = 0.0
+        self.wind_e = 0.0
         self.detect_after = detect_after
         self.detection_confirmed = False
         self.mission_started_at = 0.0
@@ -310,8 +314,14 @@ class SimDrone:
             self.vel_n += (acc_n - DRAG_K * self.vel_n * speed) * dt
             self.vel_e += (acc_e - DRAG_K * self.vel_e * speed) * dt
 
-            self.lat += (self.vel_n * dt) / M_PER_DEG_LAT
-            self.lon += (self.vel_e * dt) / (M_PER_DEG_LAT * math.cos(math.radians(self.lat)))
+            # A multirotor moves WITH the air it sits in: ground velocity is
+            # its own air velocity plus the wind. Without this there was
+            # nothing for position hold to fight, and a hold that has never
+            # been pushed proves nothing.
+            ground_n = self.vel_n + self.wind_n
+            ground_e = self.vel_e + self.wind_e
+            self.lat += (ground_n * dt) / M_PER_DEG_LAT
+            self.lon += (ground_e * dt) / (M_PER_DEG_LAT * math.cos(math.radians(self.lat)))
         else:
             # On the ground. Not coasting through the landing.
             self.vel_n = self.vel_e = 0.0
@@ -500,6 +510,12 @@ async def flight_loop(sim):
 async def run(args):
     sim = SimDrone(not args.no_gps, args.sats, args.detect_after)
     sim.pack_minutes = max(0.5, args.pack_minutes)
+    if args.wind:
+        # Meteorological convention: the direction the wind blows FROM.
+        # A westerly (--wind-from 270) pushes the aircraft east.
+        to = math.radians((args.wind_from + 180.0) % 360.0)
+        sim.wind_n = args.wind * math.cos(to)
+        sim.wind_e = args.wind * math.sin(to)
     sim.autonomous_on_link_loss = args.autonomous_on_link_loss
     asyncio.ensure_future(flight_loop(sim))
     url = args.ground_station
@@ -559,6 +575,12 @@ def main():
     ap.add_argument("--no-gps", action="store_true",
                     help="simulate the real aircraft's dead GPS (0 satellites)")
     ap.add_argument("--sats", type=int, default=11)
+    ap.add_argument("--wind", type=float, default=0.0,
+                    help="steady wind speed, m/s. Something for position "
+                         "hold to fight; 0 (the default) is flat calm.")
+    ap.add_argument("--wind-from", type=float, default=270.0,
+                    help="direction the wind blows FROM, degrees true "
+                         "(270 = westerly, pushing the aircraft east)")
     ap.add_argument("--pack-minutes", type=float, default=12.0,
                     help="how long the simulated pack lasts hovering, "
                          "minutes. Set it low (2-3) to watch the return "
