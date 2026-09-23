@@ -281,8 +281,16 @@ class SimDrone:
             self.yaw = (self.yaw + cmd_yaw_rate * dt + 180) % 360 - 180
 
         # Vertical: about 45% throttle hovers, above that it climbs.
+        #
+        # Only the VERTICAL part of the thrust holds the aircraft up, so
+        # leaning over to travel costs lift: thrust * cos(roll) * cos(pitch).
+        # This used to be `(thr - HOVER) * 0.06` with no tilt in it at all,
+        # which meant the simulator could never show the aircraft sinking
+        # as it leaned into a leg - so it could never show whether height
+        # hold survived one either.
         HOVER = 45.0
-        climb = (thr - HOVER) * 0.06 if thr > 1 else -2.0
+        lift = thr * math.cos(math.radians(self.roll)) * math.cos(math.radians(self.pitch))
+        climb = (lift - HOVER) * 0.06 if thr > 1 else -2.0
         self.height = max(0.0, self.height + climb * dt)
 
         # Horizontal: tilt ACCELERATES the aircraft, drag limits it, and

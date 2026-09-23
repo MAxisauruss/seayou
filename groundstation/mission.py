@@ -203,6 +203,27 @@ OVERPOWER_DIST_M = MAX_SPEED_MS / 0.5
 OVERPOWER_RATE_MS = 0.2
 OVERPOWER_WINDOW_S = 6.0
 
+#: Do not judge a hold until it has had this long to settle. Arriving with a
+#: tailwind carries the aircraft past the waypoint before it can stop, and
+#: for those first seconds its distance GROWS at full lean - which looked
+#: exactly like being overpowered. Measured in the simulator: a normal 2 m/s
+#: tailwind arrival raised "WIND TOO STRONG - take over". A false alarm that
+#: tells the pilot to grab the sticks is its own hazard.
+OVERPOWER_SETTLE_S = 10.0
+
+# --- height before distance -------------------------------------------------
+#
+# A leg flies at ONE height. If the aircraft is not at that height when the
+# leg starts, it gets there first, over the spot it is on, and only then sets
+# off. Measured before this, with a leg sent while still on the ground: it
+# leaned 10.9 degrees below 0.8 m (the lean that flips a quad on its legs),
+# started travelling at 2 m, and overshot the 6 m leg to 7.5 m because the
+# climb was one unramped step.
+
+#: Height error that means "not at the leg's height yet". Legs between
+#: waypoints at the same height - every search pattern - never trip it.
+TRAVEL_ALT_BAND_M = 2.0
+
 #: Abort a mission that has run this long without arriving, seconds.
 MISSION_TIMEOUT_S = 120.0
 
@@ -313,6 +334,12 @@ class Mission:
         self._hold_note = ""
         # (time, distance) while station-keeping, to spot the wind winning.
         self._hold_track = []
+        self._hold_since = None
+        # Height-first leg state: where the leg began, and the climb ramp.
+        self._leg_origin = None
+        self._leg_climb = False
+        self._leg_climb_from = 0.0
+        self._leg_climb_t0 = 0.0
         self.distance_m = None
         self.bearing_deg = None
         self.interrupted = False
@@ -356,6 +383,17 @@ class Mission:
         self.target_alt = float(alt)
         self._blind_since = None
         self._hold_track = []
+        self._hold_since = None
+        # Height first. The leg's origin is where the aircraft is now; it
+        # waits over it until it is at the leg's height, then travels.
+        alt_now = ((telemetry or {}).get("baro") or {}).get("height_m")
+        gps_now = (telemetry or {}).get("gps") or {}
+        self._leg_origin = ((gps_now["lat"], gps_now["lon"])
+                            if gps_now.get("lat") is not None else None)
+        self._leg_climb = (alt_now is not None
+                           and abs(float(alt) - alt_now) > TRAVEL_ALT_BAND_M)
+        self._leg_climb_from = alt_now if alt_now is not None else 0.0
+        self._leg_climb_t0 = time.monotonic()
         self.state = "running"
         self.reason = ""
         self.started_at = time.monotonic()
@@ -598,6 +636,16 @@ class Mission:
             return False, "fix too poor (HDOP %.1f)" % hdop
         return True, ""
 
+    def _leg_climb_setpoint(self):
+        """Where a height-first leg's climb (or descent) ramp has got to."""
+        now = time.monotonic()
+        up = self.target_alt >= self._leg_climb_from
+        rate = CLIMB_RATE_MS if up else DESCENT_RATE_MS
+        moved = rate * (now - self._leg_climb_t0)
+        if up:
+            return min(self.target_alt, self._leg_climb_from + moved)
+        return max(self.target_alt, self._leg_climb_from - moved)
+
     def _blind_hover(self, telemetry, base_control, why):
         """No usable position: hold HEIGHT, level, and wait for it back.
 
@@ -628,6 +676,13 @@ class Mission:
                        % (why, max(0.0, BLIND_HOVER_LAND_S - blind_s)))
         if alt is None:
             return self._abort_control("lost the barometer and the GPS")
+        # Part way up a height-first climb, keep following the ramp. Aiming
+        # straight at the leg's height instead was one unramped step: losing
+        # the satellites at 1.5 m on the way to 8 m commanded throttle 70.
+        if self.state == "running" and self._leg_climb:
+            want = self._leg_climb_setpoint()
+            return self._alt_control(want, alt, base_control,
+                                     trim=want == self.target_alt)
         return self._alt_control(self.target_alt, alt, base_control, trim=True)
 
     @staticmethod
@@ -834,6 +889,40 @@ class Mission:
             return self._abort_control("drifted outside the allowed range")
 
         alt = baro.get("height_m")
+
+        # Height before distance: see TRAVEL_ALT_BAND_M. Ramped like a
+        # takeoff so it never punches at full throttle, level below
+        # HOLD_MIN_HEIGHT_M, and held over the leg's origin above it.
+        if self.state == "running" and self._leg_climb and alt is not None:
+            now = time.monotonic()
+            up = self.target_alt >= self._leg_climb_from
+            want = self._leg_climb_setpoint()
+            if abs(alt - self.target_alt) <= ALT_ARRIVE_M:
+                self._leg_climb = False
+                # The travel timeout is for TRAVEL. A 20 m climb at 0.5 m/s
+                # is 40 s the leg should not be charged for.
+                self.started_at = now
+                self.reason = "at %.1f m - travelling" % alt
+                log.info("At leg height %.1f m - travelling.", alt)
+            else:
+                self.reason = ("%s to %.0f m before travelling (at %.1f m)"
+                               % ("climbing" if up else "descending",
+                                  self.target_alt, alt))
+                throttle = self._alt_throttle(
+                    want, alt, trim=want == self.target_alt)
+                throttle = max(0.0, min(MAX_AUTO_THROTTLE, throttle))
+                roll_deg = pitch_deg = 0.0
+                if alt >= HOLD_MIN_HEIGHT_M and self._leg_origin is not None:
+                    on, oe = haversine_ne(gps["lat"], gps["lon"],
+                                          self._leg_origin[0], self._leg_origin[1])
+                    roll_deg, pitch_deg = self._steer(on, oe, att.get("yaw", 0.0))
+                ctrl = dict(base_control)
+                ctrl["roll"] = _to_byte(roll_deg)
+                ctrl["pitch"] = _to_byte(pitch_deg)
+                ctrl["yaw"] = 50
+                ctrl["throttle"] = int(round(throttle))
+                return ctrl
+
         arrived_alt = alt is None or abs(alt - self.target_alt) < 1.0
         if self.state == "running" and dist <= ARRIVE_RADIUS_M and arrived_alt:
             if self._land_on_arrival:
@@ -860,6 +949,10 @@ class Mission:
         # decision for the pilot, not for this loop.
         if self.state == "holding":
             now = time.monotonic()
+            if self._hold_since is None:
+                self._hold_since = now
+            if now - self._hold_since < OVERPOWER_SETTLE_S:
+                self._hold_track = []   # still settling - nothing to judge
             self._hold_track.append((now, dist))
             self._hold_track = [(t, d) for (t, d) in self._hold_track
                                 if now - t <= OVERPOWER_WINDOW_S]
@@ -881,6 +974,7 @@ class Mission:
                                "hold point)" % dist)
         else:
             self._hold_track = []
+            self._hold_since = None
 
         # Vertical: the same height hold takeoff and landing use, so the
         # hover trim learned by one is used by all of them. The waypoint's
